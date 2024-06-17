@@ -1,0 +1,71 @@
+@EndUserText.label : 'New Sales order table'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table zats_so2022 {
+  key client    : abap.clnt not null;
+  key so_id     : abap.int4 not null;
+  customer      : abap.char(256);
+  @Semantics.amount.currencyCode : 'zats_so2022.currency_code'
+  gross_amount  : abap.curr(10,2);
+  currency_code : abap.cuky;
+  sales_org     : abap.char(4);
+
+}
+
+
+@AbapCatalog.sqlViewName: 'ZATSSOCDS2022'
+@AbapCatalog.compiler.compareFilter: true
+@AbapCatalog.preserveKey: true
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: 'Sales order CDS for RAP'
+define root view ZATS_SOCDS2022 as select from zats_so2022 {
+    @EndUserText.label: 'Sales Order Id'
+    @UI.facet: [{ 
+        type: #IDENTIFICATION_REFERENCE,
+        label: 'Sales Order',
+        purpose: #STANDARD   
+    }]
+    @UI.identification: [{position: 1 }]
+    key so_id as SoId,
+    @EndUserText.label: 'Customer'
+    @UI.identification: [{position: 2 }]
+    customer as Customer,
+    @EndUserText.label: 'Amount'
+    @UI.identification: [{position: 3 }]
+    gross_amount as GrossAmount,
+    @EndUserText.label: 'Currency'
+    @UI.identification: [{position: 4 }]
+    currency_code as CurrencyCode,
+    @UI.identification: [{position: 5 }]
+    @EndUserText.label: 'Sales Org'
+    sales_org as SalesOrg
+}
+
+
+managed implementation in class zbp_ats_socds2022 unique;
+//strict; //Comment this line in to enable strict mode. The strict mode is prerequisite to be future proof regarding syntax and to be able to release your BO.
+
+define behavior for ZATS_SOCDS2022 //alias <alias_name>
+persistent table ZATS_SO2022
+lock master
+//authorization master ( instance )
+//etag master <field_name>
+{
+  create;
+  update;
+  delete;
+
+  mapping for ZATS_SO2022{
+    CurrencyCode = currency_code;
+    SalesOrg = sales_org;
+    GrossAmount = gross_amount;
+    SoId = so_id;
+  }
+}
+
+@EndUserText.label: 'Sales order service definition'
+define service ZATS_SD_SO {
+  expose ZATS_SOCDS2022 as SalesOrderSet;
+}

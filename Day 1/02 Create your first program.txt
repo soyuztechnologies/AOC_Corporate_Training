@@ -1,0 +1,29 @@
+CLASS zats_xx_hello_aoc DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    INTERFACES if_oo_adt_classrun .
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+
+CLASS zats_xx_hello_aoc IMPLEMENTATION.
+
+  METHOD if_oo_adt_classrun~main.
+
+    out->write(
+      EXPORTING
+        data   = |Hello { sy-uname }, welcome to abap on cloud and RAP course|
+*        name   =
+*      RECEIVING
+*        output =
+    ).
+
+
+  ENDMETHOD.
+ENDCLASS.
+
