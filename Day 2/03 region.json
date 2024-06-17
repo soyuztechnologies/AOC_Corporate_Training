@@ -1,0 +1,9 @@
+[
+  {"region": "AF", "regionname": "Africa"},
+  {"region": "AN", "regionname": "Antarctica"},
+  {"region": "APJ", "regionname": "Asia Pacific Japan"},
+  {"region": "EMEA", "regionname": "Europe Middle East Africa"},
+  {"region": "NA", "regionname": "North America"},
+  {"region": "OC", "regionname": "Oceania"},
+  {"region": "SA", "regionname": "South America"}
+]
