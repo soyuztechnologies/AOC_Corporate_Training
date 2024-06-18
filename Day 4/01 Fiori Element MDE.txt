@@ -1,0 +1,162 @@
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: 'Travel Entity (root of BO)'
+@Metadata.ignorePropagatedAnnotations: true
+@ObjectModel.usageType:{
+    serviceQuality: #X,
+    sizeCategory: #S,
+    dataClass: #MIXED
+}
+@Metadata.allowExtensions: true
+define view entity ZATS_XX_U_TRAVEL as select from /dmo/travel as Travel 
+association[1] to ZATS_XX_U_AGENCY as _Agency
+on $projection.AgencyId = _Agency.AgencyId
+association[1] to ZATS_XX_U_CUSTOMER as _Customer
+on $projection.CustomerId = _Customer.CustomerId
+association[1] to I_Currency as _Currency
+on $projection.CurrencyCode = _Currency.Currency
+association[1..1] to /DMO/I_Travel_Status_VH as _Status on 
+$projection.Status = _Status.TravelStatus
+{
+    @ObjectModel.text.element: ['Description']
+    key Travel.travel_id as TravelId,
+    @ObjectModel.text.element: ['AgencyName']
+    @Consumption.valueHelpDefinition: [{ entity: { name: 'ZATS_XX_U_AGENCY', element: 'AgencyId' }  }]
+    Travel.agency_id as AgencyId,
+    _Agency.Name as AgencyName,
+    @ObjectModel.text.element: ['CustomerName']
+    @Consumption.valueHelpDefinition: [{ entity: { name: 'ZATS_XX_U_CUSTOMER', element: 'CustomerId' }  }]
+    Travel.customer_id as CustomerId,
+    _Customer.CustomerName as CustomerName,
+    Travel.begin_date as BeginDate,
+    Travel.end_date as EndDate,
+    @Semantics.amount.currencyCode: 'CurrencyCode'
+    Travel.booking_fee as BookingFee,
+    @Semantics.amount.currencyCode: 'CurrencyCode'
+    Travel.total_price as TotalPrice,
+    Travel.currency_code as CurrencyCode,
+    Travel.description as Description,
+    @ObjectModel.text.element: ['TravelStatus']
+    @Consumption.valueHelpDefinition: [{ entity: { name: '/DMO/I_Travel_Status_VH', element: 'TravelStatus' }  }]
+    Travel.status as Status,
+    _Status._Text[ Language = $session.system_language ].TravelStatus as TravelStatus,
+    Travel.createdby as Createdby,
+    Travel.createdat as Createdat,
+    Travel.lastchangedby as Lastchangedby,
+    Travel.lastchangedat as Lastchangedat,
+    _Agency,
+    _Customer,
+    _Currency,
+    _Status
+}
+
+
+
+@Metadata.layer: #CORE
+@UI.headerInfo:{ 
+    typeName: 'Travel',
+    typeNamePlural: 'Travels',
+    title: { value: 'TravelId' },
+    description: { value: 'CustomerId' }
+        
+}
+@UI.presentationVariant: [{ 
+    sortOrder: [{ by: 'Lastchangedat', direction: #DESC }],
+    visualizations: [{type: #AS_LINEITEM }]
+}]
+annotate entity ZATS_XX_U_TRAVEL
+    with 
+{
+    @UI.facet: [{ 
+        id: 'TravelHeaderPrice',
+        purpose: #HEADER,
+        type: #DATAPOINT_REFERENCE,
+        position: 10,
+        targetQualifier: 'PriceData'
+    },{ 
+        id: 'TravelHeaderStatus',
+        purpose: #HEADER,
+        type: #DATAPOINT_REFERENCE,
+        position: 20,
+        targetQualifier: 'StatusData'
+    },{ 
+        id:'GeneralInfo',
+        type: #COLLECTION,
+        label: 'General Info',
+        position: 10
+    },{ 
+        id:'Travel',
+        type: #IDENTIFICATION_REFERENCE,
+        purpose: #STANDARD,
+        label: 'General Data',
+        parentId: 'GeneralInfo',
+        position: 10
+    },{ 
+        id:'Dates',
+        type: #FIELDGROUP_REFERENCE,
+        purpose: #STANDARD,
+        label: 'Dates Data',
+        parentId: 'GeneralInfo',
+        position: 20,
+        targetQualifier: 'DatesGroup'
+    },{ 
+        id:'Prices',
+        type: #FIELDGROUP_REFERENCE,
+        purpose: #STANDARD,
+        label: 'Price Data',
+        parentId: 'GeneralInfo',
+        position: 30,
+        targetQualifier: 'PriceGroup'
+    }]
+
+    @UI : { selectionField: [{position: 10 }] ,
+            lineItem: [{ position: 10 }],
+            identification: [{position: 10 }] }
+    TravelId;
+    @UI : { selectionField: [{position: 20 }] ,
+            lineItem: [{ position: 20 }],
+            identification: [{position: 20 }] }
+    AgencyId;
+    @UI : { selectionField: [{position: 30 }] ,
+            lineItem: [{ position: 30 }],
+            identification: [{position: 30 }] }
+    CustomerId;
+    @UI : { selectionField: [{position: 40 }] ,
+            lineItem: [{ position: 40 }] }
+    @UI.fieldGroup: [{position: 10, qualifier: 'DatesGroup' }]
+    BeginDate;
+    
+    @UI.lineItem: [{ position: 50 }]
+    @UI.dataPoint: {  qualifier: 'PriceData', title: 'Price Data' }
+    @UI.fieldGroup: [{position: 10, qualifier: 'PriceGroup' }]
+    TotalPrice;
+    @UI.lineItem: [{ position: 51 }]
+    CurrencyCode;
+//    @UI.lineItem: [{ position: 11 }]
+//    Description;
+    @UI.selectionField: [{position: 50 }]
+    @UI.lineItem: [{ position: 60, importance: #HIGH }]
+    @UI.identification: [{position: 40 }]
+    @UI.textArrangement: #TEXT_ONLY
+    @UI.dataPoint: {  qualifier: 'StatusData', title: 'Travel Status' }
+    Status;
+    
+    @UI.lineItem: [{ position: 70 }]
+    
+//    Lastchangedat;
+    
+//    Createdby;
+//      Createdat;
+//    Lastchangedby;
+    @UI.fieldGroup: [{position: 20, qualifier: 'DatesGroup' }]
+    EndDate;
+    @UI.fieldGroup: [{position: 20, qualifier: 'PriceGroup' }]
+    BookingFee;
+//    /* Associations */
+//    _Agency;
+//    _Currency;
+//    _Customer;
+    
+}
+
+
