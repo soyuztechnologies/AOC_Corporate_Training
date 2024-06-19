@@ -1,0 +1,463 @@
+1. Travel root entity
+
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Travel Root of by RAP BO'
+define root view entity ZATS_XX_TRAVEL as select from /dmo/travel_m
+
+--Composition child for travel viz booking
+composition[0..*] of ZATS_XX_BOOKING as _Booking 
+--associations - lose coupling to get dependent data
+association[1] to /DMO/I_Agency as _Agency on 
+    $projection.AgencyId = _Agency.AgencyID
+association[1] to /DMO/I_Customer as _Customer on
+    $projection.CustomerId = _Customer.CustomerID
+association[1] to I_Currency as _Currency on
+    $projection.CurrencyCode = _Currency.Currency
+association[1..1] to /DMO/I_Overall_Status_VH as _OverallStatus on
+    $projection.OverallStatus = _OverallStatus.OverallStatus
+{
+    key travel_id as TravelId,
+    agency_id as AgencyId,
+    customer_id as CustomerId,
+    begin_date as BeginDate,
+    end_date as EndDate,
+    @Semantics.amount.currencyCode: 'CurrencyCode'
+    booking_fee as BookingFee,
+    @Semantics.amount.currencyCode: 'CurrencyCode'
+    total_price as TotalPrice,
+    currency_code as CurrencyCode,
+    description as Description,
+    overall_status as OverallStatus,
+    @Semantics.user.createdBy: true
+    created_by as CreatedBy,
+    @Semantics.systemDateTime.createdAt: true
+    created_at as CreatedAt,
+    @Semantics.user.lastChangedBy: true
+    last_changed_by as LastChangedBy,
+    @Semantics.systemDateTime.lastChangedAt: true
+    //Local ETag Field --> Odata Etag
+    last_changed_at as LastChangedAt,
+    case overall_status
+        when 'O' then 'Open'
+        when 'A' then 'Approved'
+        when 'R' then 'Rejected'
+        when 'X' then 'Cancelled'
+        end as StatusText,
+    case overall_status
+        when 'O' then 2
+        when 'A' then 3
+        when 'R' then 1
+        when 'X' then 1
+        end as Criticality,
+    /*Expose associations*/
+    _Booking,
+    _Agency,
+    _Customer,
+    _Currency,
+    _OverallStatus
+}
+
+
+2. Travel processor
+
+@EndUserText.label: 'My Travel processor projection'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+define root view entity ZATS_XX_TRAVEL_PROCESSOR as projection on ZATS_XX_TRAVEL
+{
+    @ObjectModel.text.element: [ 'Description' ]
+    key TravelId,
+    @ObjectModel.text.element: [ 'AgencyName' ]
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Agency',
+        entity.element: 'AgencyID'
+     }]
+    AgencyId,
+    @Semantics.text: true
+    _Agency.Name as AgencyName,
+    @ObjectModel.text.element: [ 'CustomerName' ]
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Customer',
+        entity.element: 'CustomerID'
+     }]
+    CustomerId,
+    @Semantics.text: true
+    _Customer.LastName as CustomerName,
+    BeginDate,
+    EndDate,
+    BookingFee,
+    TotalPrice,
+    CurrencyCode,
+    @Semantics.text: true
+    Description,
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Overall_Status_VH',
+        entity.element: 'OverallStatus'
+     }]
+    @ObjectModel.text.element: [ 'StatusText' ]
+    OverallStatus,
+    CreatedBy,
+    CreatedAt,
+    LastChangedBy,
+    LastChangedAt,
+    @Semantics.text: true
+    StatusText,
+    Criticality,
+    /* Associations */
+    _Agency,
+    _Booking: redirected to composition child ZATS_XX_BOOKING_PROCESSOR,
+    _Currency,
+    _Customer,
+    _OverallStatus
+}
+
+
+3. Booking processor
+
+@EndUserText.label: 'My Travel processor projection'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+define view entity ZATS_XX_BOOKING_PROCESSOR as projection on ZATS_XX_BOOKING
+{
+    key TravelId,
+    key BookingId,
+    BookingDate,
+    CustomerId,
+    CarrierId,
+    ConnectionId,
+    FlightDate,
+    FlightPrice,
+    CurrencyCode,
+    BookingStatus,
+    LastChangedAt,
+    /* Associations */
+    _BookingStatus,
+    _BookingSupplement: redirected to composition child ZATS_XX_BOOKSUPPL_PROCESSOR,
+    _Carrier,
+    _Connection,
+    _Customer,
+    _Travel: redirected to parent ZATS_XX_TRAVEL_PROCESSOR
+}
+
+
+4. Booking supplement processor
+
+@EndUserText.label: 'My Travel processor projection'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+define view entity ZATS_XX_BOOKSUPPL_PROCESSOR 
+    as projection on ZATS_XX_BOOKSUPPL
+{
+    key TravelId,
+    key BookingId,
+    key BookingSupplementId,
+    SupplementId,
+    Price,
+    CurrencyCode,
+    LastChangedAt,
+    /* Associations */
+    _Booking: redirected to parent ZATS_XX_BOOKING_PROCESSOR,
+    _Travel
+}
+
+
+
+5. MDE for travel
+
+@Metadata.layer: #CUSTOMER
+@UI.headerInfo:{
+    typeName: 'Travel',
+    typeNamePlural: 'Travels',
+    title: { value: 'TravelId' },
+    description: { value: '_Customer.FirstName' }
+ }
+annotate view ZATS_XX_TRAVEL_PROCESSOR
+    with 
+{
+    @UI.facet: [
+                { 
+                    purpose: #HEADER,
+                    type: #DATAPOINT_REFERENCE,
+                    label: 'Flight Ticket Price',
+                    position: 10,
+                    targetQualifier: 'price_data'
+                },
+                { 
+                    purpose: #HEADER,
+                    type: #DATAPOINT_REFERENCE,
+                    label: 'Status',
+                    position: 20,
+                    targetQualifier: 'status'
+                },
+                { 
+                    purpose: #STANDARD,
+                    type: #COLLECTION,
+                    position: 10,
+                    id: 'super',
+                    label: 'Additional Details'                
+                },
+                { 
+                    purpose: #STANDARD,
+                    type: #IDENTIFICATION_REFERENCE,
+                    label: 'More Info',
+                    position: 10,
+                    parentId: 'super'
+                },
+                { 
+                    purpose: #STANDARD,
+                    type: #FIELDGROUP_REFERENCE,
+                    label: 'Price data',
+                    position: 20,
+                    parentId: 'super',
+                    targetQualifier: 'pricing'
+                },{ 
+                    purpose: #STANDARD,
+                    type: #FIELDGROUP_REFERENCE,
+                    label: 'Dates',
+                    position: 30,
+                    parentId: 'super',
+                    targetQualifier: 'dates'
+                },
+                { 
+                    purpose: #STANDARD,
+                    type: #LINEITEM_REFERENCE,
+                    label: 'Bookings',
+                    position: 20,
+                    targetElement: '_Booking'
+                }
+//                ,{ 
+//                    purpose: #STANDARD,
+//                    type: #FIELDGROUP_REFERENCE,
+//                    label: 'Admin Info',
+//                    position: 40,
+//                    parentId: 'super',
+//                    targetQualifier: 'spiderman'
+//                }
+               ]
+    @UI.selectionField: [{ position: 10 }]
+    @UI.lineItem: [{ position: 10 }]
+    @UI.identification: [{ position: 10 }]
+    TravelId;
+    @UI.selectionField: [{ position: 20 }]
+    @UI.lineItem: [{ position: 20 }]
+    @UI.identification: [{ position: 20 }]
+    AgencyId;
+    @UI.selectionField: [{ position: 30 }]
+    @UI.lineItem: [{ position: 30 }]
+    @UI.identification: [{ position: 30 }]
+    CustomerId;
+    @UI.lineItem: [{ position: 40 }]
+    @UI.fieldGroup: [{ qualifier: 'dates', label: 'Start Date', position: 10 }]
+    BeginDate;
+    @UI.fieldGroup: [{ qualifier: 'dates', label: 'End Date', position: 20 }]
+    EndDate;
+    @UI.fieldGroup: [{ qualifier: 'pricing', label: 'Booking Fee', position: 10 }]
+    BookingFee;
+    @UI.selectionField: [{ position: 40 }]
+    @UI.lineItem: [{ position: 50 }]
+    @UI.dataPoint: { qualifier: 'price_data', title: 'Flight Price' }
+    @UI.fieldGroup: [{ qualifier: 'pricing', label: 'Total Price', position: 20 }]
+    TotalPrice;
+    @UI.fieldGroup: [{ qualifier: 'pricing', label: 'Currency Code', position: 30 }]
+    CurrencyCode;
+//    Description;
+    @UI.selectionField: [{ position: 50 }]
+    @UI.lineItem: [{ position: 70 , criticality: 'Criticality',
+                     importance: #HIGH }]
+    @UI.dataPoint: { title: 'Travel Status', qualifier: 'status', criticality: 'Criticality' }
+    @UI.fieldGroup: [{ qualifier: 'dates', label: 'Status', position: 30 }]
+    OverallStatus;
+    @UI.fieldGroup: [{ qualifier: 'spiderman', label: 'Created By', position: 10 }]
+    CreatedBy;
+    @UI.fieldGroup: [{ qualifier: 'spiderman', label: 'Created On', position: 20 }]
+    CreatedAt;
+    @UI.fieldGroup: [{ qualifier: 'spiderman', label: 'Changed By', position: 30 }]
+    LastChangedBy;
+    @UI.fieldGroup: [{ qualifier: 'spiderman', label: 'Changed On', position: 40 }]
+    LastChangedAt;
+    
+}
+
+6. MDE for Booking
+
+@Metadata.layer: #CORE
+@UI.headerInfo:{ 
+    typeName: 'Booking',
+    typeNamePlural: 'Bookings',
+    title: { value: 'BookingId' },
+    description: { value: '_Carrier.Name' }
+}
+annotate view ZATS_XX_BOOKING_PROCESSOR
+    with 
+{
+    @UI.facet: [
+                { 
+                    purpose: #STANDARD,
+                    type: #IDENTIFICATION_REFERENCE,
+                    label: 'Booking Info',
+                    position: 10
+                 },
+                 { 
+                    purpose: #STANDARD,
+                    type: #LINEITEM_REFERENCE,
+                    position: 20,
+                    label: 'Supplements',
+                    targetElement: '_BookingSupplement'
+                 }
+    ]
+    @UI.lineItem: [{ position: 10 }]
+    @UI.identification: [{ position: 10 }]
+    BookingId;
+    @UI.lineItem: [{ position: 20 }]
+    @UI.identification: [{ position: 20 }]
+    BookingDate;
+    @UI.lineItem: [{ position: 30 }]
+    @UI.identification: [{ position: 30 }]
+    CustomerId;
+    @UI.lineItem: [{ position: 40 }]
+    @UI.identification: [{ position: 40 }]
+    CarrierId;
+    @UI.lineItem: [{ position: 50 }]
+    @UI.identification: [{ position: 50 }]
+    ConnectionId;
+    @UI.lineItem: [{ position: 60 }]
+    @UI.identification: [{ position: 60 }]
+    FlightDate;
+    @UI.lineItem: [{ position: 70 }]
+    @UI.identification: [{ position: 70 }]
+    FlightPrice;
+    @UI.identification: [{ position: 80 }]
+    CurrencyCode;
+    @UI.lineItem: [{ position: 80 }]
+    @UI.identification: [{ position: 90 }]
+    BookingStatus;
+    @UI.identification: [{ position: 100 }]
+    LastChangedAt;    
+}
+
+7. MDE for Booking Supplement
+
+@Metadata.layer: #CORE
+@UI.headerInfo:{ 
+    typeName: 'Supplement',
+    typeNamePlural: 'Supplements',
+    title: { value: 'BookingSupplementId' },
+    description: { value: 'Price' }
+}
+annotate view ZATS_XX_BOOKSUPPL_PROCESSOR
+    with 
+{
+    @UI.facet: [{ 
+        purpose: #STANDARD,
+        type: #IDENTIFICATION_REFERENCE,
+        position: 10,
+        label: 'Supplement Info'
+     }]
+    @UI.lineItem: [{ position: 10 }]
+    @UI.identification: [{ position: 10 }]
+    BookingSupplementId;
+    @UI.lineItem: [{ position: 20 }]
+    @UI.identification: [{ position: 20 }]
+    SupplementId;
+    @UI.lineItem: [{ position: 30 }]
+    @UI.identification: [{ position: 30 }]
+    Price;
+    @UI.lineItem: [{ position: 40 }]
+    @UI.identification: [{ position: 40 }]
+    CurrencyCode;
+    @UI.identification: [{ position: 50 }]
+    LastChangedAt;
+    
+}
+
+8. BDEF for travel
+
+managed implementation in class zbp_ats_xx_travel unique;
+//guideline and best practice for definition to be followed
+strict ( 2 );
+
+//define the behavior for root entity
+define behavior for ZATS_XX_TRAVEL alias Travel
+//telling the framework to insert data in this db table for travel request
+persistent table /dmo/travel_m
+//how the RAP should handle the locks - if a travel request is locked
+//the other users cannot edit the childs - like its bookings and suppl
+lock master
+//controls the permissions and security settings for our RAP BO
+authorization master ( instance )
+//controlling the concurrency
+etag master LastChangedAt
+{
+  //here are the operations which RAP with generate automatically (manage)
+  create;
+  update;
+  delete;
+  //a booking can only be created with travel request
+  association _Booking { create; }
+
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKING alias Booking
+//telling the framework to insert data in this db table for booking
+persistent table /dmo/booking_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+{
+  update;
+  delete;
+  field ( readonly ) TravelId;
+  association _Travel;
+  association _BookingSupplement { create; }
+
+
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKSUPPL alias BookSuppl
+//telling the framework to insert data in this db table for booking suppl
+persistent table /dmo/booksuppl_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+{
+  update;
+  delete;
+  field ( readonly ) BookingId, TravelId;
+  association _Travel;
+  association _Booking;
+}
+
+
+9. BDEF for Travel Projection
+
+projection;
+strict ( 2 );
+
+define behavior for ZATS_XX_TRAVEL_PROCESSOR alias Travel
+{
+  use create;
+  use update;
+  use delete;
+
+  use association _Booking { create; }
+}
+
+define behavior for ZATS_XX_BOOKING_PROCESSOR alias Booking
+{
+  use update;
+  use delete;
+
+  use association _Travel;
+//  use association _BookingSupplement { create; }
+}
+
+//define behavior for ZATS_XX_BOOKSUPPL_PROCESSOR alias BookingSuppl
+//{
+//  use update;
+//  use delete;
+//
+//  //use association _Travel;
+//  use association _Booking;
+//}

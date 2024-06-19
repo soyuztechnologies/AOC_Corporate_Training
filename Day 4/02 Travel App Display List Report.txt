@@ -1,0 +1,218 @@
+Step 1: Enhancement of base travel root entity for value help and extra column
+
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Travel Root of by RAP BO'
+define root view entity ZATS_XX_TRAVEL as select from /dmo/travel_m
+
+--Composition child for travel viz booking
+composition[0..*] of ZATS_XX_BOOKING as _Booking 
+--associations - lose coupling to get dependent data
+association[1] to /DMO/I_Agency as _Agency on 
+    $projection.AgencyId = _Agency.AgencyID
+association[1] to /DMO/I_Customer as _Customer on
+    $projection.CustomerId = _Customer.CustomerID
+association[1] to I_Currency as _Currency on
+    $projection.CurrencyCode = _Currency.Currency
+association[1..1] to /DMO/I_Overall_Status_VH as _OverallStatus on
+    $projection.OverallStatus = _OverallStatus.OverallStatus
+{
+    key travel_id as TravelId,
+    agency_id as AgencyId,
+    customer_id as CustomerId,
+    begin_date as BeginDate,
+    end_date as EndDate,
+    @Semantics.amount.currencyCode: 'CurrencyCode'
+    booking_fee as BookingFee,
+    @Semantics.amount.currencyCode: 'CurrencyCode'
+    total_price as TotalPrice,
+    currency_code as CurrencyCode,
+    description as Description,
+    overall_status as OverallStatus,
+    @Semantics.user.createdBy: true
+    created_by as CreatedBy,
+    @Semantics.systemDateTime.createdAt: true
+    created_at as CreatedAt,
+    @Semantics.user.lastChangedBy: true
+    last_changed_by as LastChangedBy,
+    @Semantics.systemDateTime.lastChangedAt: true
+    //Local ETag Field --> Odata Etag
+    last_changed_at as LastChangedAt,
+    case overall_status
+        when 'O' then 'Open'
+        when 'A' then 'Approved'
+        when 'R' then 'Rejected'
+        when 'X' then 'Cancelled'
+        end as StatusText,
+    case overall_status
+        when 'O' then 2
+        when 'A' then 3
+        when 'R' then 1
+        when 'X' then 1
+        end as Criticality,
+    /*Expose associations*/
+    _Booking,
+    _Agency,
+    _Customer,
+    _Currency,
+    _OverallStatus
+}
+
+
+Step 2: Create travel root entity projection for processor
+
+@EndUserText.label: 'My Travel processor projection'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+define root view entity ZATS_XX_TRAVEL_PROCESSOR as projection on ZATS_XX_TRAVEL
+{
+    @ObjectModel.text.element: [ 'Description' ]
+    key TravelId,
+    @ObjectModel.text.element: [ 'AgencyName' ]
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Agency',
+        entity.element: 'AgencyID'
+     }]
+    AgencyId,
+    @Semantics.text: true
+    _Agency.Name as AgencyName,
+    @ObjectModel.text.element: [ 'CustomerName' ]
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Customer',
+        entity.element: 'CustomerID'
+     }]
+    CustomerId,
+    @Semantics.text: true
+    _Customer.LastName as CustomerName,
+    BeginDate,
+    EndDate,
+    BookingFee,
+    TotalPrice,
+    CurrencyCode,
+    @Semantics.text: true
+    Description,
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Overall_Status_VH',
+        entity.element: 'OverallStatus'
+     }]
+    @ObjectModel.text.element: [ 'StatusText' ]
+    OverallStatus,
+    CreatedBy,
+    CreatedAt,
+    LastChangedBy,
+    LastChangedAt,
+    @Semantics.text: true
+    StatusText,
+    Criticality,
+    /* Associations */
+    _Agency,
+    _Booking,
+    _Currency,
+    _Customer,
+    _OverallStatus
+}
+
+
+Step 3: Create booking entity projection for processor
+
+@EndUserText.label: 'My Travel processor projection'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+define view entity ZATS_XX_BOOKING_PROCESSOR as projection on ZATS_XX_BOOKING
+{
+    key TravelId,
+    key BookingId,
+    BookingDate,
+    CustomerId,
+    CarrierId,
+    ConnectionId,
+    FlightDate,
+    FlightPrice,
+    CurrencyCode,
+    BookingStatus,
+    LastChangedAt,
+    /* Associations */
+    _BookingStatus,
+    _BookingSupplement,
+    _Carrier,
+    _Connection,
+    _Customer,
+    _Travel: redirected to parent ZATS_XX_TRAVEL_PROCESSOR
+}
+
+
+Step 4: Create booking supplement entity projection for processor
+
+@EndUserText.label: 'My Travel processor projection'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+define view entity ZATS_XX_BOOKSUPPL_PROCESSOR 
+    as projection on ZATS_XX_BOOKSUPPL
+{
+    key TravelId,
+    key BookingId,
+    key BookingSupplementId,
+    SupplementId,
+    Price,
+    CurrencyCode,
+    LastChangedAt,
+    /* Associations */
+    _Booking: redirected to parent ZATS_XX_BOOKING_PROCESSOR,
+    _Travel
+}
+
+
+Step 5: Create metadata extensions file for travel
+
+@Metadata.layer: #CUSTOMER
+@UI.headerInfo:{
+    typeName: 'Travel',
+    typeNamePlural: 'Travels'
+ }
+annotate view ZATS_XX_TRAVEL_PROCESSOR
+    with 
+{
+    @UI.selectionField: [{ position: 10 }]
+    @UI.lineItem: [{ position: 10 }]
+    TravelId;
+    @UI.selectionField: [{ position: 20 }]
+    @UI.lineItem: [{ position: 20 }]
+    AgencyId;
+    @UI.selectionField: [{ position: 30 }]
+    @UI.lineItem: [{ position: 30 }]
+    CustomerId;
+    @UI.lineItem: [{ position: 40 }]
+    BeginDate;
+    //EndDate;
+    //BookingFee;
+    @UI.selectionField: [{ position: 40 }]
+    @UI.lineItem: [{ position: 50 }]
+    TotalPrice;
+    //CurrencyCode;
+//    Description;
+    @UI.selectionField: [{ position: 50 }]
+    @UI.lineItem: [{ position: 70 , criticality: 'Criticality',
+                     importance: #HIGH }]
+    OverallStatus;
+//    CreatedBy;
+//    CreatedAt;
+//    LastChangedBy;
+//    LastChangedAt;
+    
+}
+
+Step 6: Create service definition
+
+@EndUserText.label: 'Processor App ke lie service'
+define service ZATS_XX_SD_V2_PROCESSOR {
+  expose ZATS_XX_TRAVEL_PROCESSOR    as Travel;
+  expose ZATS_XX_BOOKING_PROCESSOR   as Booking;
+  expose ZATS_XX_BOOKSUPPL_PROCESSOR as BookSupplement;
+  expose /DMO/I_Agency               as Agency;
+  expose /DMO/I_Customer             as Customer;
+  expose /DMO/I_Carrier              as Carrier;
+  expose /DMO/I_Connection           as Connection;
+  expose /DMO/I_Overall_Status_VH    as OverallStatus;
+  expose /DMO/I_Booking_Status_VH    as BookingStatus;
+}
+
+Step 7: Create service binding for OData V2 UI and test the app preview
