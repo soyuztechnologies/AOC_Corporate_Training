@@ -1,0 +1,361 @@
+1. fix of the booking supplement projection child entity
+
+@EndUserText.label: 'My Travel processor projection'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+define view entity ZATS_XX_BOOKSUPPL_PROCESSOR 
+    as projection on ZATS_XX_BOOKSUPPL
+{
+    key TravelId,
+    key BookingId,
+    key BookingSupplementId,
+    SupplementId,
+    Price,
+    CurrencyCode,
+    LastChangedAt,
+    /* Associations */
+    _Booking: redirected to parent ZATS_XX_BOOKING_PROCESSOR,
+    _Travel: redirected to ZATS_XX_TRAVEL_PROCESSOR
+}
+
+
+2. Updated BDEF code
+
+managed implementation in class zbp_ats_xx_travel unique;
+//guideline and best practice for definition to be followed
+strict ( 2 );
+
+//define the behavior for root entity
+define behavior for ZATS_XX_TRAVEL alias Travel
+//telling the framework to insert data in this db table for travel request
+persistent table /dmo/travel_m
+//how the RAP should handle the locks - if a travel request is locked
+//the other users cannot edit the childs - like its bookings and suppl
+lock master
+//controls the permissions and security settings for our RAP BO
+authorization master ( instance )
+//controlling the concurrency
+etag master LastChangedAt
+{
+  //here are the operations which RAP with generate automatically (manage)
+  create;
+  update;
+  delete;
+  //a booking can only be created with travel request
+  association _Booking { create; }
+
+  mapping for /dmo/travel_m{
+    TravelId = travel_id;
+    AgencyId = agency_id;
+    CustomerId = customer_id;
+    BeginDate = begin_date;
+    EndDate = end_date;
+    TotalPrice = total_price;
+    BookingFee = booking_fee;
+    CurrencyCode = currency_code;
+    Description = description;
+    OverallStatus = overall_status;
+    CreatedBy = created_by;
+    LastChangedBy = last_changed_by;
+    CreatedAt = created_at;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKING alias Booking
+//telling the framework to insert data in this db table for booking
+persistent table /dmo/booking_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+{
+  update;
+  delete;
+  field ( readonly ) TravelId;
+  association _Travel;
+  association _BookingSupplement { create; }
+
+  mapping for /dmo/booking_m{
+    BookingId = booking_id;
+    BookingDate = booking_date;
+    CustomerId = customer_id;
+    CarrierId = carrier_id;
+    ConnectionId = connection_id;
+    FlightDate = flight_date;
+    FlightPrice = flight_price;
+    CurrencyCode = currency_code;
+    BookingStatus = booking_status;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKSUPPL alias BookSuppl
+//telling the framework to insert data in this db table for booking suppl
+persistent table /dmo/booksuppl_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+{
+  update;
+  delete;
+  field ( readonly ) BookingId, TravelId;
+  association _Travel;
+  association _Booking;
+
+  mapping for /dmo/booksuppl_m{
+    BookingSupplementId = booking_supplement_id;
+    SupplementId = supplement_id;
+    Price = price;
+    CurrencyCode = currency_code;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+3. Uncommented code which was giving error in last class in BDEF projection
+
+projection;
+strict ( 2 );
+
+define behavior for ZATS_XX_TRAVEL_PROCESSOR alias Travel
+{
+  use create;
+  use update;
+  use delete;
+
+  use association _Booking { create; }
+}
+
+define behavior for ZATS_XX_BOOKING_PROCESSOR alias Booking
+{
+  use update;
+  use delete;
+
+  use association _Travel;
+  use association _BookingSupplement { create; }
+}
+
+define behavior for ZATS_XX_BOOKSUPPL_PROCESSOR alias BookingSuppl
+{
+  use update;
+  use delete;
+
+  use association _Travel;
+  use association _Booking;
+}
+
+
+4. Adding value helps for Booking processor to show to user
+
+@EndUserText.label: 'My Travel processor projection'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+define view entity ZATS_XX_BOOKING_PROCESSOR as projection on ZATS_XX_BOOKING
+{
+    key TravelId,
+    key BookingId,
+    BookingDate,
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Customer',
+        entity.element: 'CustomerID'
+     }]
+    CustomerId,
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Carrier',
+        entity.element: 'AirlineID'
+     }]
+    CarrierId,
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Connection',
+        entity.element: 'ConnectionID',
+        additionalBinding: [
+                            { localElement: 'CarrierId',
+                              element: 'AirlineID' }
+                           ]
+     }]
+    ConnectionId,
+    FlightDate,
+    FlightPrice,
+    CurrencyCode,
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: '/DMO/I_Booking_Status_VH',
+        entity.element: 'BookingStatus'
+     }]
+    BookingStatus,
+    LastChangedAt,
+    /* Associations */
+    _BookingStatus,
+    _BookingSupplement: redirected to composition child ZATS_XX_BOOKSUPPL_PROCESSOR,
+    _Carrier,
+    _Connection,
+    _Customer,
+    _Travel: redirected to parent ZATS_XX_TRAVEL_PROCESSOR
+}
+
+
+
+5. EML code for testing RAP BO
+
+CLASS zcl_ats_xx_eml DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    data : lv_opr type c VALUE 'C'.
+    INTERFACES if_oo_adt_classrun .
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+
+
+CLASS zcl_ats_xx_eml IMPLEMENTATION.
+  METHOD if_oo_adt_classrun~main.
+
+    case lv_opr.
+        when 'R'.
+
+            READ ENTITIES OF ZATS_XX_TRAVEL
+            ENTITY Travel
+            FIELDS ( travelid agencyid CustomerId OverallStatus ) WITH
+            VALUE #( ( TravelId = '00000010' )
+                     ( TravelId = '00000024' )
+                     ( TravelId = '009595' )
+                   )
+            RESULT Data(lt_result)
+            FAILED data(lt_failed)
+            REPORTED DATA(lt_messages).
+
+            out->write(
+              EXPORTING
+                data   = lt_result
+            ).
+
+            out->write(
+              EXPORTING
+                data   = lt_failed
+            ).
+
+
+        when 'C'.
+
+            data(lv_description) = 'Anubhav Rocks with RAP'.
+            data(lv_agency) = '070016'.
+            data(lv_customer) = '000697'.
+
+            MODIFY ENTITIES OF ZATS_XX_TRAVEL
+            ENTITY Travel
+            CREATE FIELDS ( TravelId AgencyId CurrencyCode BeginDate EndDate Description OverallStatus )
+            WITH VALUE #(
+                            (
+                              %CID = 'ANUBHAV'
+                              TravelId = '00012347'
+                              AgencyId = lv_agency
+                              CustomerId = lv_customer
+                              BeginDate = cl_abap_context_info=>get_system_date( )
+                              EndDate = cl_abap_context_info=>get_system_date( ) + 30
+                              Description = lv_description
+                              OverallStatus = 'O'
+                             )
+                            ( %CID = 'ANUBHAV-1'
+                              TravelId = '00012358'
+                              AgencyId = lv_agency
+                              CustomerId = lv_customer
+                              BeginDate = cl_abap_context_info=>get_system_date( )
+                              EndDate = cl_abap_context_info=>get_system_date( ) + 30
+                              Description = lv_description
+                              OverallStatus = 'O'
+                             )
+                             (
+                              %CID = 'ANUBHAV-2'
+                              TravelId = '00000010'
+                              AgencyId = lv_agency
+                              CustomerId = lv_customer
+                              BeginDate = cl_abap_context_info=>get_system_date( )
+                              EndDate = cl_abap_context_info=>get_system_date( ) + 30
+                              Description = lv_description
+                              OverallStatus = 'O'
+                             )
+             )
+             MAPPED data(lt_mapped)
+             FAILED lt_failed
+             REPORTED lt_messages.
+
+             COMMIT ENTITIES.
+
+             out->write(
+              EXPORTING
+                data   = lt_mapped
+            ).
+
+            out->write(
+              EXPORTING
+                data   = lt_failed
+            ).
+
+        when 'U'.
+
+            lv_description = 'Wow, That was an update'.
+            lv_agency = '070032'.
+
+            MODIFY ENTITIES OF ZATS_XX_TRAVEL
+            ENTITY Travel
+            UPDATE FIELDS ( AgencyId Description )
+            WITH VALUE #(
+                            ( TravelId = '00001133'
+                              AgencyId = lv_agency
+                              Description = lv_description
+                             )
+                            ( TravelId = '00001135'
+                              AgencyId = lv_agency
+                              Description = lv_description
+                             )
+             )
+             MAPPED lt_mapped
+             FAILED lt_failed
+             REPORTED lt_messages.
+
+             COMMIT ENTITIES.
+
+             out->write(
+              EXPORTING
+                data   = lt_mapped
+            ).
+
+            out->write(
+              EXPORTING
+                data   = lt_failed
+            ).
+
+        when 'D'.
+
+        MODIFY ENTITIES OF ZATS_XX_TRAVEL
+            ENTITY Travel
+            DELETE FROM VALUE #(
+                            ( TravelId = '00012347'
+                             )
+             )
+             MAPPED lt_mapped
+             FAILED lt_failed
+             REPORTED lt_messages.
+
+             COMMIT ENTITIES.
+
+             out->write(
+              EXPORTING
+                data   = lt_mapped
+            ).
+
+            out->write(
+              EXPORTING
+                data   = lt_failed
+            ).
+
+    endcase.
+
+  ENDMETHOD.
+ENDCLASS.
+
+

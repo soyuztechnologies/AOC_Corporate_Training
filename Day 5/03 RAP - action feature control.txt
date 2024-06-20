@@ -1,0 +1,575 @@
+1. Booking Suppl id gen
+
+CLASS lhc_booking DEFINITION INHERITING FROM cl_abap_behavior_handler.
+
+  PRIVATE SECTION.
+
+    METHODS earlynumbering_cba_Bookingsupp FOR NUMBERING
+      IMPORTING entities FOR CREATE Booking\_Bookingsupplement.
+
+ENDCLASS.
+
+CLASS lhc_booking IMPLEMENTATION.
+
+  METHOD earlynumbering_cba_Bookingsupp.
+
+  data max_booking_suppl_id type /dmo/booking_supplement_id.
+
+    ""Step 1: get all the travel requests and their booking data
+    read ENTITIES OF zats_xx_travel in local mode
+        ENTITY booking by \_BookingSupplement
+        from CORRESPONDING #( entities )
+        link data(booking_supplements).
+
+    ""Loop at unique travel ids
+    loop at entities ASSIGNING FIELD-SYMBOL(<booking_group>) GROUP BY <booking_group>-%tky.
+    ""Step 2: get the highest booking supplement number which is already there
+        loop at booking_supplements into data(ls_booking) using key entity
+            where source-TravelId = <booking_group>-TravelId and
+                  source-BookingId = <booking_group>-BookingId.
+                if max_booking_suppl_id < ls_booking-target-BookingId.
+                    max_booking_suppl_id = ls_booking-target-BookingId.
+                ENDIF.
+        ENDLOOP.
+    ""Step 3: get the asigned booking supplement numbers for incoming request
+        loop at entities into data(ls_entity) using key entity
+            where TravelId = <booking_group>-TravelId and
+                  BookingId = <booking_group>-BookingId.
+                loop at ls_entity-%target into data(ls_target).
+                    if max_booking_suppl_id < ls_target-BookingId.
+                        max_booking_suppl_id = ls_target-BookingId.
+                    ENDIF.
+                ENDLOOP.
+        ENDLOOP.
+    ""Step 4: loop over all the entities of travel with same travel id
+        loop at entities ASSIGNING FIELD-SYMBOL(<booking>)
+            USING KEY entity where TravelId = <booking_group>-TravelId and
+                                   BookingId = <booking_group>-BookingId..
+    ""Step 5: assign new booking IDs to the booking entity inside each travel
+            LOOP at <booking>-%target ASSIGNING FIELD-SYMBOL(<bookingsuppl_wo_numbers>).
+                append CORRESPONDING #( <bookingsuppl_wo_numbers> ) to mapped-booksuppl
+                ASSIGNING FIELD-SYMBOL(<mapped_bookingsuppl>).
+                if <mapped_bookingsuppl>-BookingSupplementId is INITIAL.
+                    max_booking_suppl_id += 1.
+                    <mapped_bookingsuppl>-BookingSupplementId = max_booking_suppl_id.
+                ENDIF.
+            ENDLOOP.
+        ENDLOOP.
+    ENDLOOP.
+
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+*"* use this source file for the definition and implementation of
+*"* local helper classes, interface definitions and type
+*"* declarations
+
+
+2. BDEF
+
+managed;
+//guideline and best practice for definition to be followed
+strict ( 2 );
+
+//define the behavior for root entity
+define behavior for ZATS_XX_TRAVEL alias Travel
+//make the behavior pool/implemetation for travel
+implementation in class zbp_ats_xx_travel unique
+//telling the framework to insert data in this db table for travel request
+persistent table /dmo/travel_m
+//how the RAP should handle the locks - if a travel request is locked
+//the other users cannot edit the childs - like its bookings and suppl
+lock master
+//controls the permissions and security settings for our RAP BO
+authorization master ( instance )
+//controlling the concurrency
+etag master LastChangedAt
+early numbering
+{
+  //here are the operations which RAP with generate automatically (manage)
+  create;
+  update;
+  delete;
+  //a booking can only be created with travel request
+  //dynamic feature control
+  association _Booking { create (features:instance); }
+
+  //static feature control
+  field (readonly) TravelId, CreatedBy, CreatedAt, LastChangedBy, LastChangedAt;
+  field (mandatory) AgencyId, CustomerId, BeginDate, EndDate, OverallStatus, BookingFee, CurrencyCode;
+
+  //data actions using factory action to create new instances of BO
+  factory action copyTravel[1];
+
+  mapping for /dmo/travel_m{
+    TravelId = travel_id;
+    AgencyId = agency_id;
+    CustomerId = customer_id;
+    BeginDate = begin_date;
+    EndDate = end_date;
+    TotalPrice = total_price;
+    BookingFee = booking_fee;
+    CurrencyCode = currency_code;
+    Description = description;
+    OverallStatus = overall_status;
+    CreatedBy = created_by;
+    LastChangedBy = last_changed_by;
+    CreatedAt = created_at;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKING alias Booking
+//make the behavior pool/implemetation for booking
+implementation in class zbp_ats_xx_booking unique
+//telling the framework to insert data in this db table for booking
+persistent table /dmo/booking_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+early numbering
+{
+  update;
+  delete;
+  field ( readonly ) TravelId, BookingId;
+  field ( mandatory ) CarrierId, ConnectionId, FlightDate, BookingStatus;
+
+  association _Travel;
+  association _BookingSupplement { create; }
+
+  mapping for /dmo/booking_m{
+    TravelId = travel_id;
+    BookingId = booking_id;
+    BookingDate = booking_date;
+    CustomerId = customer_id;
+    CarrierId = carrier_id;
+    ConnectionId = connection_id;
+    FlightDate = flight_date;
+    FlightPrice = flight_price;
+    CurrencyCode = currency_code;
+    BookingStatus = booking_status;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKSUPPL alias BookSuppl
+//make the behavior pool/implemetation for travel
+implementation in class zbp_ats_xx_boosuppl unique
+//telling the framework to insert data in this db table for booking suppl
+persistent table /dmo/booksuppl_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+early numbering
+{
+  update;
+  delete;
+  field ( readonly ) BookingId, TravelId, BookingSupplementId;
+  field ( mandatory ) Price, SupplementId;
+
+  association _Travel;
+  association _Booking;
+
+  mapping for /dmo/booksuppl_m{
+    TravelId = travel_id;
+    BookingId = booking_id;
+    BookingSupplementId = booking_supplement_id;
+    SupplementId = supplement_id;
+    Price = price;
+    CurrencyCode = currency_code;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+
+3. BIMP
+
+CLASS lhc_Travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+
+    METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
+      IMPORTING keys REQUEST requested_authorizations FOR Travel RESULT result.
+    METHODS copytravel FOR MODIFY
+      IMPORTING keys FOR ACTION travel~copytravel.
+    METHODS get_instance_features FOR INSTANCE FEATURES
+      IMPORTING keys REQUEST requested_features FOR travel RESULT result.
+    METHODS earlynumbering_create FOR NUMBERING
+      IMPORTING entities FOR CREATE travel.
+
+    METHODS earlynumbering_cba_booking FOR NUMBERING
+      IMPORTING entities FOR CREATE travel\_booking.
+
+ENDCLASS.
+
+CLASS lhc_Travel IMPLEMENTATION.
+
+  METHOD get_instance_authorizations.
+  ENDMETHOD.
+
+  METHOD earlynumbering_create.
+
+    data: entity type STRUCTURE FOR CREATE zats_xx_travel,
+          travel_id_max type /dmo/travel_id.
+
+    ""Step 1: Ensure that Travel id is not set for the record which is coming
+    loop at entities into entity where TravelId is not initial.
+        APPEND CORRESPONDING #( entity ) to mapped-travel.
+    ENDLOOP.
+
+    data(entities_wo_travelid) = entities.
+    delete entities_wo_travelid where TravelId is not INITIAL.
+
+    ""Step 2: Get the seuquence numbers from the SNRO
+    try.
+        cl_numberrange_runtime=>number_get(
+          EXPORTING
+            nr_range_nr       = '01'
+            object            = CONV #( '/DMO/TRAVL' )
+            quantity          =  conv #( lines( entities_wo_travelid ) )
+          IMPORTING
+            number            = data(number_range_key)
+            returncode        = data(number_range_return_code)
+            returned_quantity = data(number_range_returned_quantity)
+        ).
+*        CATCH cx_nr_object_not_found.
+*        CATCH cx_number_ranges.
+
+      catch cx_number_ranges into data(lx_number_ranges).
+        ""Step 3: If there is an exception, we will throw the error
+        loop at entities_wo_travelid into entity.
+            append value #( %cid = entity-%cid %key = entity-%key %msg = lx_number_ranges )
+                to reported-travel.
+            append value #( %cid = entity-%cid %key = entity-%key ) to failed-travel.
+        ENDLOOP.
+        exit.
+    endtry.
+
+    case number_range_return_code.
+        when '1'.
+            ""Step 4: Handle especial cases where the number range exceed critical %
+            loop at entities_wo_travelid into entity.
+                append value #( %cid = entity-%cid %key = entity-%key
+                                %msg = new /dmo/cm_flight_messages(
+                                            textid = /dmo/cm_flight_messages=>number_range_depleted
+                                            severity = if_abap_behv_message=>severity-warning
+                                ) )
+                    to reported-travel.
+            ENDLOOP.
+        when '2' OR '3'.
+            ""Step 5: The number range return last number, or number exhaused
+            append value #( %cid = entity-%cid %key = entity-%key
+                                %msg = new /dmo/cm_flight_messages(
+                                            textid = /dmo/cm_flight_messages=>not_sufficient_numbers
+                                            severity = if_abap_behv_message=>severity-warning
+                                ) )
+                    to reported-travel.
+            append value #( %cid = entity-%cid
+                            %key = entity-%key
+                            %fail-cause = if_abap_behv=>cause-conflict
+                             ) to failed-travel.
+    ENDCASE.
+
+    ""Step 6: Final check for all numbers
+    ASSERT number_range_returned_quantity = lines( entities_wo_travelid ).
+
+    ""Step 7: Loop over the incoming travel data and asign the numbers from number range and
+    ""        return MAPPED data which will then go to RAP framework
+    travel_id_max = number_range_key - number_range_returned_quantity.
+
+    loop at entities_wo_travelid into entity.
+
+        travel_id_max += 1.
+        entity-TravelId = travel_id_max.
+
+        append value #( %cid = entity-%cid
+                        %key = entity-%key ) to mapped-travel.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD earlynumbering_cba_Booking.
+
+    data max_booking_id type /dmo/booking_id.
+
+    ""Step 1: get all the travel requests and their booking data
+    read ENTITIES OF zats_xx_travel in local mode
+        ENTITY travel by \_Booking
+        from CORRESPONDING #( entities )
+        link data(bookings).
+
+    ""Loop at unique travel ids
+    loop at entities ASSIGNING FIELD-SYMBOL(<travel_group>) GROUP BY <travel_group>-TravelId.
+    ""Step 2: get the highest booking number which is already there
+        loop at bookings into data(ls_booking) using key entity
+            where source-TravelId = <travel_group>-TravelId.
+                if max_booking_id < ls_booking-target-BookingId.
+                    max_booking_id = ls_booking-target-BookingId.
+                ENDIF.
+        ENDLOOP.
+    ""Step 3: get the asigned booking numbers for incoming request
+        loop at entities into data(ls_entity) using key entity
+            where TravelId = <travel_group>-TravelId.
+                loop at ls_entity-%target into data(ls_target).
+                    if max_booking_id < ls_target-BookingId.
+                        max_booking_id = ls_target-BookingId.
+                    ENDIF.
+                ENDLOOP.
+        ENDLOOP.
+    ""Step 4: loop over all the entities of travel with same travel id
+        loop at entities ASSIGNING FIELD-SYMBOL(<travel>)
+            USING KEY entity where TravelId = <travel_group>-TravelId.
+    ""Step 5: assign new booking IDs to the booking entity inside each travel
+            LOOP at <travel>-%target ASSIGNING FIELD-SYMBOL(<booking_wo_numbers>).
+                append CORRESPONDING #( <booking_wo_numbers> ) to mapped-booking
+                ASSIGNING FIELD-SYMBOL(<mapped_booking>).
+                if <mapped_booking>-BookingId is INITIAL.
+                    max_booking_id += 10.
+                    <mapped_booking>-BookingId = max_booking_id.
+                ENDIF.
+            ENDLOOP.
+        ENDLOOP.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD copyTravel.
+
+    data: travels type table for create zats_xx_travel\\Travel,
+          bookings_cba type table for create zats_xx_travel\\Travel\_Booking,
+          booksuppl_cba type table for create zats_xx_travel\\Booking\_BookingSupplement.
+
+    "Step 1: Remove the travel instances with initial %cid
+    read table keys with key %cid = '' into data(key_with_initial_cid).
+    ASSERT key_with_initial_cid is initial.
+
+    "Step 2: Read all travel, booking and booking supplement using EML
+    read entities of zats_xx_travel in local mode
+    entity Travel
+        ALL FIELDS WITH CORRESPONDING #( keys )
+        RESULT DATA(travel_read_result)
+        FAILED failed.
+
+    read entities of zats_xx_travel in local mode
+    entity Travel by \_Booking
+        ALL FIELDS WITH CORRESPONDING #( travel_read_result )
+        RESULT DATA(book_read_result)
+        FAILED failed.
+
+    read entities of zats_xx_travel in local mode
+    entity booking by \_BookingSupplement
+        ALL FIELDS WITH CORRESPONDING #( book_read_result )
+        RESULT DATA(booksuppl_read_result)
+        FAILED failed.
+
+    "Step 3: Fill travel internal table for travel data creation - %cid - abc123
+    loop at travel_read_result ASSIGNING FIELD-SYMBOL(<travel>).
+
+         "Travel data prepration
+         append value #( %cid = keys[ %tky = <travel>-%tky ]-%cid
+                        %data = CORRESPONDING #( <travel> except travelId )
+         ) to travels ASSIGNING FIELD-SYMBOL(<new_travel>).
+
+         <new_travel>-BeginDate = cl_abap_context_info=>get_system_date( ).
+         <new_travel>-EndDate = cl_abap_context_info=>get_system_date( ) + 30.
+         <new_travel>-OverallStatus = 'O'.
+
+        "Step 3: Fill booking internal table for booking data creation - %cid_ref - abc123
+        append value #( %cid_ref = keys[ key entity %tky = <travel>-%tky ]-%cid )
+          to bookings_cba ASSIGNING FIELD-SYMBOL(<bookings_cba>).
+
+        loop at  book_read_result ASSIGNING FIELD-SYMBOL(<booking>) where TravelId = <travel>-TravelId.
+
+            append value #( %cid = keys[ key entity %tky = <travel>-%tky ]-%cid && <booking>-BookingId
+                            %data = CORRESPONDING #( book_read_result[ key entity %tky = <booking>-%tky ] EXCEPT travelid )
+            )
+                to <bookings_cba>-%target ASSIGNING FIELD-SYMBOL(<new_booking>).
+
+            <new_booking>-BookingStatus = 'N'.
+
+            "Step 4: Fill booking supplement internal table for booking suppl data creation
+            append value #( %cid_ref = keys[ key entity %tky = <travel>-%tky ]-%cid && <booking>-BookingId )
+                    to booksuppl_cba ASSIGNING FIELD-SYMBOL(<booksuppl_cba>).
+
+            loop at booksuppl_read_result ASSIGNING FIELD-SYMBOL(<booksuppl>)
+                using KEY entity where TravelId = <travel>-TravelId and
+                                       BookingId = <booking>-BookingId.
+
+                append value #( %cid = keys[ key entity %tky = <travel>-%tky ]-%cid && <booking>-BookingId && <booksuppl>-BookingSupplementId
+                            %data = CORRESPONDING #( <booksuppl> EXCEPT travelid bookingid )
+                )
+                to <booksuppl_cba>-%target.
+
+            ENDLOOP.
+        ENDLOOP.
+
+
+    ENDLOOP.
+
+    "Step 5: MODIFY ENTITY EML to create new BO instance using existing data
+    MODIFY ENTITIES OF zats_xx_travel IN LOCAL MODE
+        ENTITY travel
+            CREATE FIELDS ( AgencyId CustomerId BeginDate EndDate BookingFee TotalPrice CurrencyCode OverallStatus )
+                with travels
+                    create by \_Booking FIELDS ( Bookingid BookingDate CustomerId CarrierId ConnectionId FlightDate FlightPrice CurrencyCode BookingStatus )
+                        with bookings_cba
+                            ENTITY Booking
+                                create by \_BookingSupplement FIELDS ( bookingsupplementid supplementid price currencycode )
+                                    WITH booksuppl_cba
+        MAPPED data(mapped_create).
+
+     mapped-travel = mapped_create-travel.
+
+  ENDMETHOD.
+
+  METHOD get_instance_features.
+
+    "Step 1: Read the travel data with status
+    READ ENTITIES OF zats_xx_travel in local mode
+        ENTITY travel
+            FIELDS ( travelid overallstatus )
+            with     CORRESPONDING #( keys )
+        RESULT data(travels)
+        FAILED failed.
+
+    "Step 2: return the result with booking creation possible or not
+    read table travels into data(ls_travel) index 1.
+
+    if ( ls_travel-OverallStatus = 'X' ).
+        data(lv_allow) = if_abap_behv=>fc-o-disabled.
+    else.
+        lv_allow = if_abap_behv=>fc-o-enabled.
+    ENDIF.
+
+    result = value #( for travel in travels
+                        ( %tky = travel-%tky
+                          %assoc-_Booking = lv_allow
+                        )
+                    ).
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+4. MDE
+
+@Metadata.layer: #CUSTOMER
+@UI.headerInfo:{
+    typeName: 'Travel',
+    typeNamePlural: 'Travels',
+    title: { value: 'TravelId' },
+    description: { value: '_Customer.FirstName' }
+ }
+annotate view ZATS_XX_TRAVEL_PROCESSOR
+    with 
+{
+    @UI.facet: [
+                { 
+                    purpose: #HEADER,
+                    type: #DATAPOINT_REFERENCE,
+                    label: 'Flight Ticket Price',
+                    position: 10,
+                    targetQualifier: 'price_data'
+                },
+                { 
+                    purpose: #HEADER,
+                    type: #DATAPOINT_REFERENCE,
+                    label: 'Status',
+                    position: 20,
+                    targetQualifier: 'status'
+                },
+                { 
+                    purpose: #STANDARD,
+                    type: #COLLECTION,
+                    position: 10,
+                    id: 'super',
+                    label: 'Additional Details'                
+                },
+                { 
+                    purpose: #STANDARD,
+                    type: #IDENTIFICATION_REFERENCE,
+                    label: 'More Info',
+                    position: 10,
+                    parentId: 'super'
+                },
+                { 
+                    purpose: #STANDARD,
+                    type: #FIELDGROUP_REFERENCE,
+                    label: 'Price data',
+                    position: 20,
+                    parentId: 'super',
+                    targetQualifier: 'pricing'
+                },{ 
+                    purpose: #STANDARD,
+                    type: #FIELDGROUP_REFERENCE,
+                    label: 'Dates',
+                    position: 30,
+                    parentId: 'super',
+                    targetQualifier: 'dates'
+                },
+                { 
+                    purpose: #STANDARD,
+                    type: #LINEITEM_REFERENCE,
+                    label: 'Bookings',
+                    position: 20,
+                    targetElement: '_Booking'
+                }
+                ,{ 
+                    purpose: #STANDARD,
+                    type: #FIELDGROUP_REFERENCE,
+                    label: 'Admin Info',
+                    position: 40,
+                    parentId: 'super',
+                    targetQualifier: 'spiderman'
+                }
+               ]
+    @UI.selectionField: [{ position: 10 }]
+    @UI.lineItem: [{ position: 10 },
+    { type: #FOR_ACTION, label: 'Copy This Travel',
+    dataAction: 'copyTravel' }]
+    @UI.identification: [{ position: 10 },
+    { type: #FOR_ACTION, label: 'Copy Maddi',
+    dataAction: 'copyTravel' }]
+    TravelId;
+    @UI.selectionField: [{ position: 20 }]
+    @UI.lineItem: [{ position: 20 }]
+    @UI.identification: [{ position: 20 }]
+    AgencyId;
+    @UI.selectionField: [{ position: 30 }]
+    @UI.lineItem: [{ position: 30 }]
+    @UI.identification: [{ position: 30 }]
+    CustomerId;
+    @UI.lineItem: [{ position: 40 }]
+    @UI.fieldGroup: [{ qualifier: 'dates', label: 'Start Date', position: 10 }]
+    BeginDate;
+    @UI.fieldGroup: [{ qualifier: 'dates', label: 'End Date', position: 20 }]
+    EndDate;
+    @UI.fieldGroup: [{ qualifier: 'pricing', label: 'Booking Fee', position: 10 }]
+    BookingFee;
+    @UI.selectionField: [{ position: 40 }]
+    @UI.lineItem: [{ position: 50 }]
+    @UI.dataPoint: { qualifier: 'price_data', title: 'Flight Price' }
+    @UI.fieldGroup: [{ qualifier: 'pricing', label: 'Total Price', position: 20 }]
+    TotalPrice;
+    @UI.fieldGroup: [{ qualifier: 'pricing', label: 'Currency Code', position: 30 }]
+    CurrencyCode;
+//    Description;
+    @UI.selectionField: [{ position: 50 }]
+    @UI.lineItem: [{ position: 70 , criticality: 'Criticality',
+                     importance: #HIGH }]
+    @UI.dataPoint: { title: 'Travel Status', qualifier: 'status', criticality: 'Criticality' }
+    @UI.fieldGroup: [{ qualifier: 'dates', label: 'Status', position: 30 }]
+    OverallStatus;
+    @UI.fieldGroup: [{ qualifier: 'spiderman', label: 'Created By', position: 10 }]
+    CreatedBy;
+    @UI.fieldGroup: [{ qualifier: 'spiderman', label: 'Created On', position: 20 }]
+    CreatedAt;
+    @UI.fieldGroup: [{ qualifier: 'spiderman', label: 'Changed By', position: 30 }]
+    LastChangedBy;
+    @UI.fieldGroup: [{ qualifier: 'spiderman', label: 'Changed On', position: 40 }]
+    LastChangedAt;
+    
+}

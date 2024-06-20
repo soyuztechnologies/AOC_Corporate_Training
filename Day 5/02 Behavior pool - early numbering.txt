@@ -1,0 +1,357 @@
+*"* use this source file for the definition and implementation of
+*"* local helper classes, interface definitions and type
+*"* declarations
+
+class zcl_earth definition.
+    public section.
+        METHODS start_engine RETURNING value(r_value) type string.
+        METHODS leave_orbit RETURNING value(r_value) type string.
+ENDCLASS.
+class zcl_earth IMPLEMENTATION.
+        method start_engine.
+            r_value = 'We take off from planet Earth for mission Mars'.
+        ENDMETHOD.
+        method leave_orbit.
+            r_value = 'We leave earth orbit'.
+        ENDMETHOD.
+ENDCLASS.
+
+class zcl_planet1 definition.
+    PUBLIC SECTION.
+        METHODS enter_orbit RETURNING value(r_value) type string.
+        METHODS leave_orbit RETURNING value(r_value) type string.
+ENDCLASS.
+class zcl_planet1 IMPLEMENTATION.
+        method enter_orbit.
+            r_value = 'We enter planet 1 orbit'.
+        ENDMETHOD.
+        method leave_orbit.
+            r_value = 'We leave planet1 orbit'.
+        ENDMETHOD.
+ENDCLASS.
+
+class zcl_mars definition.
+    PUBLIC SECTION.
+        METHODS enter_orbit RETURNING value(r_value) type string.
+        METHODS explore_mars RETURNING value(r_value) type string.
+ENDCLASS.
+class zcl_mars IMPLEMENTATION.
+        method enter_orbit.
+            r_value = 'We enter in Mars orbit'.
+        ENDMETHOD.
+        method explore_mars.
+            r_value = 'Roger! we found water on mars'.
+        ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_anubhav_mission_mars DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    data: itab type table of string.
+    INTERFACES if_oo_adt_classrun .
+    methods reach_to_mars.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+
+
+CLASS zcl_anubhav_mission_mars IMPLEMENTATION.
+
+
+  METHOD if_oo_adt_classrun~main.
+
+    me->reach_to_mars(  ).
+
+    out->write(
+          EXPORTING
+            data   = itab
+*            name   =
+*          RECEIVING
+*            output =
+        ).
+
+  ENDMETHOD.
+  METHOD reach_to_mars.
+    data lv_text type string.
+
+    data(lo_earth) = new zcl_earth( ).
+    data(lo_iplanet1) = new zcl_planet1(  ).
+    data(lo_mars) = new zcl_mars( ).
+
+    lv_text = lo_earth->start_engine( ).
+    append lv_text to itab.
+    lv_text = lo_earth->leave_orbit(  ).
+    append lv_text to itab.
+
+    lv_text = lo_iplanet1->enter_orbit( ).
+    append lv_text to itab.
+    lv_text = lo_iplanet1->leave_orbit(  ).
+    append lv_text to itab.
+
+    lv_text = lo_mars->enter_orbit( ).
+    append lv_text to itab.
+    lv_text = lo_mars->explore_mars( ).
+    append lv_text to itab.
+
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+--------------------------------------------------------
+
+managed;
+//guideline and best practice for definition to be followed
+strict ( 2 );
+
+//define the behavior for root entity
+define behavior for ZATS_XX_TRAVEL alias Travel
+//make the behavior pool/implemetation for travel
+implementation in class zbp_ats_xx_travel unique
+//telling the framework to insert data in this db table for travel request
+persistent table /dmo/travel_m
+//how the RAP should handle the locks - if a travel request is locked
+//the other users cannot edit the childs - like its bookings and suppl
+lock master
+//controls the permissions and security settings for our RAP BO
+authorization master ( instance )
+//controlling the concurrency
+etag master LastChangedAt
+early numbering
+{
+  //here are the operations which RAP with generate automatically (manage)
+  create;
+  update;
+  delete;
+  //a booking can only be created with travel request
+  association _Booking { create; }
+
+  mapping for /dmo/travel_m{
+    TravelId = travel_id;
+    AgencyId = agency_id;
+    CustomerId = customer_id;
+    BeginDate = begin_date;
+    EndDate = end_date;
+    TotalPrice = total_price;
+    BookingFee = booking_fee;
+    CurrencyCode = currency_code;
+    Description = description;
+    OverallStatus = overall_status;
+    CreatedBy = created_by;
+    LastChangedBy = last_changed_by;
+    CreatedAt = created_at;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKING alias Booking
+//make the behavior pool/implemetation for booking
+implementation in class zbp_ats_xx_booking unique
+//telling the framework to insert data in this db table for booking
+persistent table /dmo/booking_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+early numbering
+{
+  update;
+  delete;
+  field ( readonly ) TravelId;
+  association _Travel;
+  association _BookingSupplement { create; }
+
+  mapping for /dmo/booking_m{
+    TravelId = travel_id;
+    BookingId = booking_id;
+    BookingDate = booking_date;
+    CustomerId = customer_id;
+    CarrierId = carrier_id;
+    ConnectionId = connection_id;
+    FlightDate = flight_date;
+    FlightPrice = flight_price;
+    CurrencyCode = currency_code;
+    BookingStatus = booking_status;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKSUPPL alias BookSuppl
+//make the behavior pool/implemetation for travel
+implementation in class zbp_ats_xx_boosuppl unique
+//telling the framework to insert data in this db table for booking suppl
+persistent table /dmo/booksuppl_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+early numbering
+{
+  update;
+  delete;
+  field ( readonly ) BookingId, TravelId;
+  association _Travel;
+  association _Booking;
+
+  mapping for /dmo/booksuppl_m{
+    TravelId = travel_id;
+    BookingId = booking_id;
+    BookingSupplementId = booking_supplement_id;
+    SupplementId = supplement_id;
+    Price = price;
+    CurrencyCode = currency_code;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+---------------------------------------------------
+
+CLASS lhc_Travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+
+    METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
+      IMPORTING keys REQUEST requested_authorizations FOR Travel RESULT result.
+    METHODS earlynumbering_create FOR NUMBERING
+      IMPORTING entities FOR CREATE travel.
+
+    METHODS earlynumbering_cba_booking FOR NUMBERING
+      IMPORTING entities FOR CREATE travel\_booking.
+
+ENDCLASS.
+
+CLASS lhc_Travel IMPLEMENTATION.
+
+  METHOD get_instance_authorizations.
+  ENDMETHOD.
+
+  METHOD earlynumbering_create.
+
+    data: entity type STRUCTURE FOR CREATE zats_xx_travel,
+          travel_id_max type /dmo/travel_id.
+
+    ""Step 1: Ensure that Travel id is not set for the record which is coming
+    loop at entities into entity where TravelId is not initial.
+        APPEND CORRESPONDING #( entity ) to mapped-travel.
+    ENDLOOP.
+
+    data(entities_wo_travelid) = entities.
+    delete entities_wo_travelid where TravelId is not INITIAL.
+
+    ""Step 2: Get the seuquence numbers from the SNRO
+    try.
+        cl_numberrange_runtime=>number_get(
+          EXPORTING
+            nr_range_nr       = '01'
+            object            = CONV #( '/DMO/TRAVL' )
+            quantity          =  conv #( lines( entities_wo_travelid ) )
+          IMPORTING
+            number            = data(number_range_key)
+            returncode        = data(number_range_return_code)
+            returned_quantity = data(number_range_returned_quantity)
+        ).
+*        CATCH cx_nr_object_not_found.
+*        CATCH cx_number_ranges.
+
+      catch cx_number_ranges into data(lx_number_ranges).
+        ""Step 3: If there is an exception, we will throw the error
+        loop at entities_wo_travelid into entity.
+            append value #( %cid = entity-%cid %key = entity-%key %msg = lx_number_ranges )
+                to reported-travel.
+            append value #( %cid = entity-%cid %key = entity-%key ) to failed-travel.
+        ENDLOOP.
+        exit.
+    endtry.
+
+    case number_range_return_code.
+        when '1'.
+            ""Step 4: Handle especial cases where the number range exceed critical %
+            loop at entities_wo_travelid into entity.
+                append value #( %cid = entity-%cid %key = entity-%key
+                                %msg = new /dmo/cm_flight_messages(
+                                            textid = /dmo/cm_flight_messages=>number_range_depleted
+                                            severity = if_abap_behv_message=>severity-warning
+                                ) )
+                    to reported-travel.
+            ENDLOOP.
+        when '2' OR '3'.
+            ""Step 5: The number range return last number, or number exhaused
+            append value #( %cid = entity-%cid %key = entity-%key
+                                %msg = new /dmo/cm_flight_messages(
+                                            textid = /dmo/cm_flight_messages=>not_sufficient_numbers
+                                            severity = if_abap_behv_message=>severity-warning
+                                ) )
+                    to reported-travel.
+            append value #( %cid = entity-%cid
+                            %key = entity-%key
+                            %fail-cause = if_abap_behv=>cause-conflict
+                             ) to failed-travel.
+    ENDCASE.
+
+    ""Step 6: Final check for all numbers
+    ASSERT number_range_returned_quantity = lines( entities_wo_travelid ).
+
+    ""Step 7: Loop over the incoming travel data and asign the numbers from number range and
+    ""        return MAPPED data which will then go to RAP framework
+    travel_id_max = number_range_key - number_range_returned_quantity.
+
+    loop at entities_wo_travelid into entity.
+
+        travel_id_max += 1.
+        entity-TravelId = travel_id_max.
+
+        append value #( %cid = entity-%cid
+                        %key = entity-%key ) to mapped-travel.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD earlynumbering_cba_Booking.
+
+    data max_booking_id type /dmo/booking_id.
+
+    ""Step 1: get all the travel requests and their booking data
+    read ENTITIES OF zats_xx_travel in local mode
+        ENTITY travel by \_Booking
+        from CORRESPONDING #( entities )
+        link data(bookings).
+
+    ""Loop at unique travel ids
+    loop at entities ASSIGNING FIELD-SYMBOL(<travel_group>) GROUP BY <travel_group>-TravelId.
+    ""Step 2: get the highest booking number which is already there
+        loop at bookings into data(ls_booking) using key entity
+            where source-TravelId = <travel_group>-TravelId.
+                if max_booking_id < ls_booking-target-BookingId.
+                    max_booking_id = ls_booking-target-BookingId.
+                ENDIF.
+        ENDLOOP.
+    ""Step 3: get the asigned booking numbers for incoming request
+        loop at entities into data(ls_entity) using key entity
+            where TravelId = <travel_group>-TravelId.
+                loop at ls_entity-%target into data(ls_target).
+                    if max_booking_id < ls_target-BookingId.
+                        max_booking_id = ls_target-BookingId.
+                    ENDIF.
+                ENDLOOP.
+        ENDLOOP.
+    ""Step 4: loop over all the entities of travel with same travel id
+        loop at entities ASSIGNING FIELD-SYMBOL(<travel>)
+            USING KEY entity where TravelId = <travel_group>-TravelId.
+    ""Step 5: assign new booking IDs to the booking entity inside each travel
+            LOOP at <travel>-%target ASSIGNING FIELD-SYMBOL(<booking_wo_numbers>).
+                append CORRESPONDING #( <booking_wo_numbers> ) to mapped-booking
+                ASSIGNING FIELD-SYMBOL(<mapped_booking>).
+                if <mapped_booking>-BookingId is INITIAL.
+                    max_booking_id += 10.
+                    <mapped_booking>-BookingId = max_booking_id.
+                ENDIF.
+            ENDLOOP.
+        ENDLOOP.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+ENDCLASS.
