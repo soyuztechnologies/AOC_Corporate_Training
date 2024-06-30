@@ -230,7 +230,7 @@ CLASS lhc_Travel IMPLEMENTATION.
 
   METHOD earlynumbering_create.
 
-    data: entity type STRUCTURE FOR CREATE zats_xx_travel,
+    data: entity type STRUCTURE FOR CREATE zats_ao_travel,
           travel_id_max type /dmo/travel_id.
 
     ""Step 1: Ensure that Travel id is not set for the record which is coming
@@ -303,6 +303,10 @@ CLASS lhc_Travel IMPLEMENTATION.
         travel_id_max += 1.
         entity-TravelId = travel_id_max.
 
+        reported-%other = VALUE #( ( new_message_with_text(
+                                 severity = if_abap_behv_message=>severity-success
+                                 text     = 'Travel id has been created now!' ) ) ).
+
         append value #( %cid = entity-%cid
                         %key = entity-%key ) to mapped-travel.
     ENDLOOP.
@@ -314,7 +318,7 @@ CLASS lhc_Travel IMPLEMENTATION.
     data max_booking_id type /dmo/booking_id.
 
     ""Step 1: get all the travel requests and their booking data
-    read ENTITIES OF zats_xx_travel in local mode
+    read ENTITIES OF zats_ao_travel in local mode
         ENTITY travel by \_Booking
         from CORRESPONDING #( entities )
         link data(bookings).
