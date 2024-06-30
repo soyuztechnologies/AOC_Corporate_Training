@@ -1,0 +1,378 @@
+1. Internal Action, Determinations, Validations and Early Save
+
+managed implementation in class zbp_ats_xx_travel unique;
+//guideline and best practice for definition to be followed
+strict ( 2 );
+
+//define the behavior for root entity
+define behavior for ZATS_XX_TRAVEL alias Travel
+//make the behavior pool/implemetation for travel
+implementation in class zbp_ats_xx_travel unique
+//telling the framework to insert data in this db table for travel request
+persistent table /dmo/travel_m
+//how the RAP should handle the locks - if a travel request is locked
+//the other users cannot edit the childs - like its bookings and suppl
+lock master
+//controls the permissions and security settings for our RAP BO
+authorization master ( instance )
+//controlling the concurrency
+etag master LastChangedAt
+early numbering
+with additional save
+{
+  //here are the operations which RAP with generate automatically (manage)
+  create;
+  update;
+  delete;
+  //a booking can only be created with travel request
+  //dynamic feature control
+  association _Booking { create (features:instance); }
+
+  //its a piece of code which is intented to be only
+  //consumed within our RAP BO
+  internal action reCalcTotalPrice;
+  //Define determination to execute the code when
+  //booking fee or curr code changes so we calc total price
+  determination calculateTotalPrice on modify
+            { create; field BookingFee, CurrencyCode; }
+
+  //Checking custom business object rules
+  validation validateHeaderData on save {create; field CustomerId, BeginDate, EndDate;}
+
+  //static feature control
+  field (readonly) TravelId, TotalPrice, CreatedBy, CreatedAt, LastChangedBy, LastChangedAt;
+  field (mandatory) AgencyId, CustomerId, BeginDate, EndDate, OverallStatus, BookingFee, CurrencyCode;
+
+  //data actions using factory action to create new instances of BO
+  factory action copyTravel[1];
+
+  mapping for /dmo/travel_m{
+    TravelId = travel_id;
+    AgencyId = agency_id;
+    CustomerId = customer_id;
+    BeginDate = begin_date;
+    EndDate = end_date;
+    TotalPrice = total_price;
+    BookingFee = booking_fee;
+    CurrencyCode = currency_code;
+    Description = description;
+    OverallStatus = overall_status;
+    CreatedBy = created_by;
+    LastChangedBy = last_changed_by;
+    CreatedAt = created_at;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKING alias Booking
+//make the behavior pool/implemetation for booking
+implementation in class zbp_ats_xx_booking unique
+//telling the framework to insert data in this db table for booking
+persistent table /dmo/booking_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+early numbering
+{
+  update;
+  delete;
+  field ( readonly ) TravelId, BookingId;
+  field ( mandatory ) CarrierId, ConnectionId, FlightDate, BookingStatus;
+
+  association _Travel;
+  association _BookingSupplement { create; }
+
+  mapping for /dmo/booking_m{
+    TravelId = travel_id;
+    BookingId = booking_id;
+    BookingDate = booking_date;
+    CustomerId = customer_id;
+    CarrierId = carrier_id;
+    ConnectionId = connection_id;
+    FlightDate = flight_date;
+    FlightPrice = flight_price;
+    CurrencyCode = currency_code;
+    BookingStatus = booking_status;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+//define the behavior for child entity
+define behavior for ZATS_XX_BOOKSUPPL alias BookSuppl
+//make the behavior pool/implemetation for travel
+implementation in class zbp_ats_xx_boosuppl unique
+//telling the framework to insert data in this db table for booking suppl
+persistent table /dmo/booksuppl_m
+lock dependent by _Travel
+authorization dependent by _Travel
+etag master LastChangedAt
+early numbering
+{
+  update;
+  delete;
+  field ( readonly ) BookingId, TravelId, BookingSupplementId;
+  field ( mandatory ) Price, SupplementId;
+
+  association _Travel;
+  association _Booking;
+
+  mapping for /dmo/booksuppl_m{
+    TravelId = travel_id;
+    BookingId = booking_id;
+    BookingSupplementId = booking_supplement_id;
+    SupplementId = supplement_id;
+    Price = price;
+    CurrencyCode = currency_code;
+    LastChangedAt = last_changed_at;
+  }
+}
+
+2. BIMP
+
+CLASS lsc_zats_xx_travel DEFINITION INHERITING FROM cl_abap_behavior_saver.
+
+  PROTECTED SECTION.
+
+    METHODS save_modified REDEFINITION.
+
+ENDCLASS.
+
+CLASS lsc_zats_xx_travel IMPLEMENTATION.
+
+  METHOD save_modified.
+
+    data: travel_log_update type STANDARD TABLE OF /dmo/log_travel,
+          final_changes  type STANDARD TABLE OF /dmo/log_travel.
+
+    if update-travel is not initial.
+
+        travel_log_update = CORRESPONDING #( update-travel MAPPING
+                                                travel_id = TravelId
+         ).
+
+        loop at update-travel ASSIGNING FIELD-SYMBOL(<travel_log_update>).
+
+            ASSIGN travel_log_update[ travel_id = <travel_log_update>-TravelId ]
+                to FIELD-SYMBOL(<travel_log_db>).
+
+            get time stamp field <travel_log_db>-created_at.
+
+            if <travel_log_update>-%control-CustomerId = if_abap_behv=>mk-on.
+
+                <travel_log_db>-change_id = cl_system_uuid=>create_uuid_x16_static( ).
+                <travel_log_db>-changed_field_name = 'anubhav_customer'.
+                <travel_log_db>-changed_value = <travel_log_update>-CustomerId.
+                <travel_log_db>-changing_operation = 'CHANGE'.
+
+                append <travel_log_db> to final_changes.
+
+            ENDIF.
+
+            if <travel_log_update>-%control-AgencyId = if_abap_behv=>mk-on.
+
+                <travel_log_db>-change_id = cl_system_uuid=>create_uuid_x16_static( ).
+                <travel_log_db>-changed_field_name = 'anubhav_agency'.
+                <travel_log_db>-changed_value = <travel_log_update>-AgencyId.
+                <travel_log_db>-changing_operation = 'CHANGE'.
+
+                append <travel_log_db> to final_changes.
+
+            ENDIF.
+
+        ENDLOOP.
+
+        insert /dmo/log_travel from table @final_changes.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+CLASS lhc_Travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+
+    METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
+      IMPORTING keys REQUEST requested_authorizations FOR Travel RESULT result.
+    METHODS copytravel FOR MODIFY
+      IMPORTING keys FOR ACTION travel~copytravel.
+    METHODS get_instance_features FOR INSTANCE FEATURES
+      IMPORTING keys REQUEST requested_features FOR travel RESULT result.
+    METHODS recalctotalprice FOR MODIFY
+      IMPORTING keys FOR ACTION travel~recalctotalprice.
+
+    METHODS calculatetotalprice FOR DETERMINE ON MODIFY
+      IMPORTING keys FOR travel~calculatetotalprice.
+    METHODS validateheaderdata FOR VALIDATE ON SAVE
+      IMPORTING keys FOR travel~validateheaderdata.
+    METHODS earlynumbering_create FOR NUMBERING
+      IMPORTING entities FOR CREATE travel.
+
+    METHODS earlynumbering_cba_booking FOR NUMBERING
+      IMPORTING entities FOR CREATE travel\_booking.
+
+ENDCLASS.
+
+CLASS lhc_Travel IMPLEMENTATION.
+
+
+  METHOD reCalcTotalPrice.
+
+*    Define a structure where we can store all the booking fees and currency code
+     TYPES : BEGIN OF ty_amount_per_currency,
+                amount type /dmo/total_price,
+                currency_code type /dmo/currency_code,
+             END OF ty_amount_per_currency.
+
+     data : amounts_per_currencycode TYPE STANDARD TABLE OF ty_amount_per_currency.
+
+*    Read all travel instances, subsequent bookings using EML
+     READ ENTITIES OF ZATS_XX_TRAVEL IN LOCAL MODE
+        ENTITY Travel
+        FIELDS ( BookingFee CurrencyCode )
+        WITH CORRESPONDING #( keys )
+        RESULT DATA(travels).
+
+     READ ENTITIES OF ZATS_XX_TRAVEL IN LOCAL MODE
+        ENTITY Travel by \_Booking
+        FIELDS ( FlightPrice CurrencyCode )
+        WITH CORRESPONDING #( travels )
+        RESULT DATA(bookings).
+
+     READ ENTITIES OF ZATS_XX_TRAVEL IN LOCAL MODE
+        ENTITY Booking by \_BookingSupplement
+        FIELDS ( price CurrencyCode )
+        WITH CORRESPONDING #( bookings )
+        RESULT DATA(bookingsupplements).
+
+*    Delete the values w/o any currency
+     DELETE travels WHERE CurrencyCode is initial.
+     DELETE bookings WHERE CurrencyCode is initial.
+     DELETE bookingsupplements WHERE CurrencyCode is initial.
+
+*    Total all booking and supplement amounts which are in common currency
+     loop at travels ASSIGNING FIELD-SYMBOL(<travel>).
+     "Set the first value for total price by adding the booking fee from header
+     amounts_per_currencycode = value #( ( amount = <travel>-BookingFee
+                                         currency_code = <travel>-CurrencyCode ) ).
+
+*    Loop at all amounts and compare with target currency
+        loop at bookings into data(booking) where TravelId = <travel>-TravelId.
+
+            COLLECT VALUE ty_amount_per_currency( amount = booking-FlightPrice
+                                                  currency_code = booking-CurrencyCode
+            ) into amounts_per_currencycode.
+
+        ENDLOOP.
+
+        loop at bookingsupplements into data(bookingsupplement) where TravelId = <travel>-TravelId.
+
+            COLLECT VALUE ty_amount_per_currency( amount = bookingsupplement-Price
+                                                  currency_code = booking-CurrencyCode
+            ) into amounts_per_currencycode.
+
+        ENDLOOP.
+
+        clear <travel>-TotalPrice.
+*    Perform currency conversion
+        loop at amounts_per_currencycode into data(amount_per_currencycode).
+
+            if amount_per_currencycode-currency_code = <travel>-CurrencyCode.
+                <travel>-TotalPrice += amount_per_currencycode-amount.
+            else.
+
+                /dmo/cl_flight_amdp=>convert_currency(
+                  EXPORTING
+                    iv_amount               = amount_per_currencycode-amount
+                    iv_currency_code_source = amount_per_currencycode-currency_code
+                    iv_currency_code_target = <travel>-CurrencyCode
+                    iv_exchange_rate_date   = cl_abap_context_info=>get_system_date( )
+                  IMPORTING
+                    ev_amount               = data(total_booking_amt)
+                ).
+
+                <travel>-TotalPrice = <travel>-TotalPrice + total_booking_amt.
+            ENDIF.
+
+        ENDLOOP.
+*    Put back the total amount
+
+     ENDLOOP.
+*    Return the total amount in mapped so the RAP will modify this data to DB
+     MODIFY ENTITIES OF    ZATS_XX_TRAVEL in local mode
+     entity travel
+     UPDATE FIELDS ( TotalPrice )
+     WITH CORRESPONDING #( travels ).
+
+  ENDMETHOD.
+
+  METHOD calculateTotalPrice.
+
+    MODIFY entities of ZATS_XX_TRAVEL in local mode
+        ENTITY travel
+            execute reCalcTotalPrice
+            FROM CORRESPONDING #( keys ).
+
+  ENDMETHOD.
+
+  METHOD validateHeaderData.
+
+    "Step 1: Read the travel data
+    read entities of ZATS_XX_TRAVEL in local mode
+        ENTITY travel
+        FIELDS ( CustomerId )
+        WITH CORRESPONDING #( keys )
+        RESULT data(lt_travel).
+
+    "Step 2: Declare a sorted table for holding customer ids
+    data customers type SORTED TABLE OF /dmo/customer WITH UNIQUE KEY customer_id.
+
+    "Step 3: Extract the unique customer IDs in our table
+    customers = CORRESPONDING #( lt_travel discarding duplicates mapping
+                                       customer_id = CustomerId EXCEPT *
+     ).
+    delete customers where customer_id is INITIAL.
+
+    ""Get the validation done to get all customer ids from db
+    ""these are the IDs which are present
+    if customers is not initial.
+
+        select from /dmo/customer FIELDS customer_id
+        FOR ALL ENTRIES IN @customers
+        where customer_id = @customers-customer_id
+        into table @data(lt_cust_db).
+
+    ENDIF.
+
+    ""loop at travel data
+    loop at lt_travel into data(ls_travel).
+
+        if ( ls_travel-CustomerId is initial OR
+             NOT  line_exists(  lt_cust_db[ customer_id = ls_travel-CustomerId ] ) ).
+
+            ""Inform the RAP framework to terminate the create
+            append value #( %tky = ls_travel-%tky ) to failed-travel.
+            append value #( %tky = ls_travel-%tky
+                            %element-customerid = if_abap_behv=>mk-on
+                            %msg = new /dmo/cm_flight_messages(
+                                          textid                = /dmo/cm_flight_messages=>customer_unkown
+                                          customer_id           = ls_travel-CustomerId
+                                          severity              = if_abap_behv_message=>severity-error
+
+            )
+            ) to reported-travel.
+
+        ENDIF.
+
+    ENDLOOP.
+
+    ""Exercise: Validations
+    "1. check if begin and end date is empty
+    "2. check if the end date is always > begin date
+    "3. begin date of travel should be in future
+
+  ENDMETHOD.
+
+ENDCLASS.
+
