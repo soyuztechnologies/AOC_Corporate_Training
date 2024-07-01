@@ -1,0 +1,427 @@
+CLASS lhc_Travel DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+
+    METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
+      IMPORTING keys REQUEST requested_authorizations FOR Travel RESULT result.
+    METHODS get_instance_features FOR INSTANCE FEATURES
+      IMPORTING keys REQUEST requested_features FOR travel RESULT result.
+    METHODS copytravel FOR MODIFY
+      IMPORTING keys FOR ACTION travel~copytravel.
+    METHODS recalctotalprice FOR MODIFY
+      IMPORTING keys FOR ACTION travel~recalctotalprice.
+    METHODS calculatetotalprice FOR DETERMINE ON MODIFY
+      IMPORTING keys FOR travel~calculatetotalprice.
+    METHODS validateheaderdata FOR VALIDATE ON SAVE
+      IMPORTING keys FOR travel~validateheaderdata.
+    METHODS earlynumbering_create FOR NUMBERING
+      IMPORTING entities FOR CREATE travel.
+
+    METHODS earlynumbering_cba_booking FOR NUMBERING
+      IMPORTING entities FOR CREATE travel\_booking.
+
+ENDCLASS.
+
+CLASS lhc_Travel IMPLEMENTATION.
+
+  METHOD get_instance_authorizations.
+  ENDMETHOD.
+
+  METHOD earlynumbering_create.
+
+    data: entity type STRUCTURE FOR CREATE zats_ao_travel,
+          travel_id_max type /dmo/travel_id.
+
+    ""Step 1: Ensure that Travel id is not set for the record which is coming
+    loop at entities into entity where TravelId is not initial.
+        APPEND CORRESPONDING #( entity ) to mapped-travel.
+    ENDLOOP.
+
+    data(entities_wo_travelid) = entities.
+    delete entities_wo_travelid where TravelId is not INITIAL.
+
+    ""Step 2: Get the seuquence numbers from the SNRO
+    try.
+        cl_numberrange_runtime=>number_get(
+          EXPORTING
+            nr_range_nr       = '01'
+            object            = CONV #( '/DMO/TRAVL' )
+            quantity          =  conv #( lines( entities_wo_travelid ) )
+          IMPORTING
+            number            = data(number_range_key)
+            returncode        = data(number_range_return_code)
+            returned_quantity = data(number_range_returned_quantity)
+        ).
+*        CATCH cx_nr_object_not_found.
+*        CATCH cx_number_ranges.
+
+      catch cx_number_ranges into data(lx_number_ranges).
+        ""Step 3: If there is an exception, we will throw the error
+        loop at entities_wo_travelid into entity.
+            append value #( %cid = entity-%cid %key = entity-%key %msg = lx_number_ranges )
+                to reported-travel.
+            append value #( %cid = entity-%cid %key = entity-%key ) to failed-travel.
+        ENDLOOP.
+        exit.
+    endtry.
+
+    case number_range_return_code.
+        when '1'.
+            ""Step 4: Handle especial cases where the number range exceed critical %
+            loop at entities_wo_travelid into entity.
+                append value #( %cid = entity-%cid %key = entity-%key
+                                %msg = new /dmo/cm_flight_messages(
+                                            textid = /dmo/cm_flight_messages=>number_range_depleted
+                                            severity = if_abap_behv_message=>severity-warning
+                                ) )
+                    to reported-travel.
+            ENDLOOP.
+        when '2' OR '3'.
+            ""Step 5: The number range return last number, or number exhaused
+            append value #( %cid = entity-%cid %key = entity-%key
+                                %msg = new /dmo/cm_flight_messages(
+                                            textid = /dmo/cm_flight_messages=>not_sufficient_numbers
+                                            severity = if_abap_behv_message=>severity-warning
+                                ) )
+                    to reported-travel.
+            append value #( %cid = entity-%cid
+                            %key = entity-%key
+                            %fail-cause = if_abap_behv=>cause-conflict
+                             ) to failed-travel.
+    ENDCASE.
+
+    ""Step 6: Final check for all numbers
+    ASSERT number_range_returned_quantity = lines( entities_wo_travelid ).
+
+    ""Step 7: Loop over the incoming travel data and asign the numbers from number range and
+    ""        return MAPPED data which will then go to RAP framework
+    travel_id_max = number_range_key - number_range_returned_quantity.
+
+    loop at entities_wo_travelid into entity.
+
+        travel_id_max += 1.
+        entity-TravelId = travel_id_max.
+
+        reported-%other = VALUE #( ( new_message_with_text(
+                                 severity = if_abap_behv_message=>severity-success
+                                 text     = 'Travel id has been created now!' ) ) ).
+
+        append value #( %cid = entity-%cid
+                        %is_draft = entity-%is_draft
+                        %key = entity-%key ) to mapped-travel.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD earlynumbering_cba_Booking.
+
+    data max_booking_id type /dmo/booking_id.
+
+    ""Step 1: get all the travel requests and their booking data
+    read ENTITIES OF zats_ao_travel in local mode
+        ENTITY travel by \_Booking
+        from CORRESPONDING #( entities )
+        link data(bookings).
+
+    ""Loop at unique travel ids
+    loop at entities ASSIGNING FIELD-SYMBOL(<travel_group>) GROUP BY <travel_group>-TravelId.
+    ""Step 2: get the highest booking number which is already there
+        loop at bookings into data(ls_booking) using key entity
+            where source-TravelId = <travel_group>-TravelId.
+                if max_booking_id < ls_booking-target-BookingId.
+                    max_booking_id = ls_booking-target-BookingId.
+                ENDIF.
+        ENDLOOP.
+    ""Step 3: get the asigned booking numbers for incoming request
+        loop at entities into data(ls_entity) using key entity
+            where TravelId = <travel_group>-TravelId.
+                loop at ls_entity-%target into data(ls_target).
+                    if max_booking_id < ls_target-BookingId.
+                        max_booking_id = ls_target-BookingId.
+                    ENDIF.
+                ENDLOOP.
+        ENDLOOP.
+    ""Step 4: loop over all the entities of travel with same travel id
+        loop at entities ASSIGNING FIELD-SYMBOL(<travel>)
+            USING KEY entity where TravelId = <travel_group>-TravelId.
+    ""Step 5: assign new booking IDs to the booking entity inside each travel
+            LOOP at <travel>-%target ASSIGNING FIELD-SYMBOL(<booking_wo_numbers>).
+                append CORRESPONDING #( <booking_wo_numbers> ) to mapped-booking
+                ASSIGNING FIELD-SYMBOL(<mapped_booking>).
+                if <mapped_booking>-BookingId is INITIAL.
+                    max_booking_id += 10.
+                    <mapped_booking>-%is_draft = <booking_wo_numbers>-%is_draft.
+                    <mapped_booking>-BookingId = max_booking_id.
+                ENDIF.
+            ENDLOOP.
+        ENDLOOP.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD get_instance_features.
+    "Step 1: Read the travel data with status
+    READ ENTITIES OF zats_ao_travel in local mode
+        ENTITY travel
+            FIELDS ( travelid overallstatus )
+            with     CORRESPONDING #( keys )
+        RESULT data(travels)
+        FAILED failed.
+
+    "Step 2: return the result with booking creation possible or not
+    read table travels into data(ls_travel) index 1.
+
+    if ( ls_travel-OverallStatus = 'X' ).
+        data(lv_allow) = if_abap_behv=>fc-o-disabled.
+        data(lv_enable) = if_abap_behv=>fc-f-read_only.
+    else.
+        lv_allow = if_abap_behv=>fc-o-enabled.
+        lv_enable = if_abap_behv=>fc-f-unrestricted.
+    ENDIF.
+
+    result = value #( for travel in travels
+                        ( %tky = travel-%tky
+                          %assoc-_Booking = lv_allow
+                        )
+                    ).
+  ENDMETHOD.
+
+  METHOD copyTravel.
+
+    DATA:
+      travels       TYPE TABLE FOR CREATE ZATS_AO_TRAVEL\\travel,
+      bookings_cba  TYPE TABLE FOR CREATE ZATS_AO_TRAVEL\\travel\_booking,
+      booksuppl_cba TYPE TABLE FOR CREATE ZATS_AO_TRAVEL\\Booking\_BookingSupplement.
+
+    " remove travel instances with initial %cid (i.e., not set by caller API)
+    READ TABLE keys WITH KEY %cid = '' INTO DATA(key_with_inital_cid).
+    ASSERT key_with_inital_cid IS INITIAL.
+
+    READ ENTITIES OF ZATS_AO_TRAVEL IN LOCAL MODE
+      ENTITY travel
+       ALL FIELDS WITH CORRESPONDING #( keys )
+    RESULT DATA(travel_read_result)
+    FAILED failed.
+
+    READ ENTITIES OF ZATS_AO_TRAVEL IN LOCAL MODE
+      ENTITY travel BY \_booking
+       ALL FIELDS WITH CORRESPONDING #( travel_read_result )
+     RESULT DATA(book_read_result).
+
+    READ ENTITIES OF ZATS_AO_TRAVEL IN LOCAL MODE
+      ENTITY booking BY \_BookingSupplement
+       ALL FIELDS WITH CORRESPONDING #( book_read_result )
+    RESULT DATA(booksuppl_read_result).
+
+    LOOP AT travel_read_result ASSIGNING FIELD-SYMBOL(<travel>).
+      "Fill travel container for creating new travel instance
+      APPEND VALUE #( %cid     = keys[ %tky = <travel>-%tky ]-%cid
+                      %data    = CORRESPONDING #( <travel> EXCEPT travelid ) )
+        TO travels ASSIGNING FIELD-SYMBOL(<new_travel>).
+
+      "Fill %cid_ref of travel as instance identifier for cba booking
+      APPEND VALUE #( %cid_ref = keys[  %tky = <travel>-%tky ]-%cid )
+        TO bookings_cba ASSIGNING FIELD-SYMBOL(<bookings_cba>).
+
+      <new_travel>-begindate     = cl_abap_context_info=>get_system_date( ).
+      <new_travel>-enddate       = cl_abap_context_info=>get_system_date( ) + 30.
+      <new_travel>-overallstatus = 'O'.  "Set to open to allow an editable instance
+
+      LOOP AT book_read_result ASSIGNING FIELD-SYMBOL(<booking>) USING KEY entity WHERE travelid EQ <travel>-travelid.
+        "Fill booking container for creating booking with cba
+        APPEND VALUE #( %cid     = keys[ %tky = <travel>-%tky ]-%cid && <booking>-bookingid
+                        %data    = CORRESPONDING #(  book_read_result[ %tky = <booking>-%tky ] EXCEPT travelid ) )
+          TO <bookings_cba>-%target ASSIGNING FIELD-SYMBOL(<new_booking>).
+
+        "Fill %cid_ref of booking as instance identifier for cba booksuppl
+        APPEND VALUE #( %cid_ref = keys[ %tky = <travel>-%tky ]-%cid && <booking>-bookingid )
+          TO booksuppl_cba ASSIGNING FIELD-SYMBOL(<booksuppl_cba>).
+
+        <new_booking>-bookingstatus = 'N'.
+
+        LOOP AT booksuppl_read_result ASSIGNING FIELD-SYMBOL(<booksuppl>) USING KEY entity WHERE travelid  EQ <travel>-travelid
+                                                                                           AND   bookingid EQ <booking>-bookingid.
+          "Fill booksuppl container for creating supplement with cba
+          APPEND VALUE #( %cid  = keys[ %tky = <travel>-%tky ]-%cid  && <booking>-bookingid && <booksuppl>-bookingsupplementid
+                          %data = CORRESPONDING #( <booksuppl> EXCEPT travelid bookingid ) )
+            TO <booksuppl_cba>-%target.
+        ENDLOOP.
+      ENDLOOP.
+    ENDLOOP.
+
+    "create new BO instance
+    MODIFY ENTITIES OF ZATS_AO_TRAVEL IN LOCAL MODE
+      ENTITY travel
+        CREATE FIELDS ( agencyid customerid begindate enddate bookingfee totalprice currencycode overallstatus description )
+          WITH travels
+        CREATE BY \_Booking FIELDS ( bookingid bookingdate customerid carrierid connectionid flightdate flightprice currencycode bookingstatus )
+          WITH bookings_cba
+      ENTITY booking
+        CREATE BY \_BookingSupplement FIELDS ( bookingsupplementid supplementid price currencycode )
+          WITH booksuppl_cba
+      MAPPED DATA(mapped_create).
+
+    mapped-travel   =  mapped_create-travel .
+
+  ENDMETHOD.
+
+  METHOD reCalcTotalPrice.
+
+*    Define a structure where we can store all the booking fees and currency code
+     TYPES : BEGIN OF ty_amount_per_currency,
+                amount type /dmo/total_price,
+                currency_code type /dmo/currency_code,
+             END OF ty_amount_per_currency.
+
+     data : amounts_per_currencycode TYPE STANDARD TABLE OF ty_amount_per_currency.
+
+*    Read all travel instances, subsequent bookings using EML
+     READ ENTITIES OF ZATS_ao_TRAVEL IN LOCAL MODE
+        ENTITY Travel
+        FIELDS ( BookingFee CurrencyCode )
+        WITH CORRESPONDING #( keys )
+        RESULT DATA(travels).
+
+     READ ENTITIES OF ZATS_ao_TRAVEL IN LOCAL MODE
+        ENTITY Travel by \_Booking
+        FIELDS ( FlightPrice CurrencyCode )
+        WITH CORRESPONDING #( travels )
+        RESULT DATA(bookings).
+
+     READ ENTITIES OF ZATS_ao_TRAVEL IN LOCAL MODE
+        ENTITY Booking by \_BookingSupplement
+        FIELDS ( price CurrencyCode )
+        WITH CORRESPONDING #( bookings )
+        RESULT DATA(bookingsupplements).
+
+*    Delete the values w/o any currency
+     DELETE travels WHERE CurrencyCode is initial.
+     DELETE bookings WHERE CurrencyCode is initial.
+     DELETE bookingsupplements WHERE CurrencyCode is initial.
+
+*    Total all booking and supplement amounts which are in common currency
+     loop at travels ASSIGNING FIELD-SYMBOL(<travel>).
+     "Set the first value for total price by adding the booking fee from header
+     amounts_per_currencycode = value #( ( amount = <travel>-BookingFee
+                                         currency_code = <travel>-CurrencyCode ) ).
+
+*    Loop at all amounts and compare with target currency
+        loop at bookings into data(booking) where TravelId = <travel>-TravelId.
+
+            COLLECT VALUE ty_amount_per_currency( amount = booking-FlightPrice
+                                                  currency_code = booking-CurrencyCode
+            ) into amounts_per_currencycode.
+
+        ENDLOOP.
+
+        loop at bookingsupplements into data(bookingsupplement) where TravelId = <travel>-TravelId.
+
+            COLLECT VALUE ty_amount_per_currency( amount = bookingsupplement-Price
+                                                  currency_code = booking-CurrencyCode
+            ) into amounts_per_currencycode.
+
+        ENDLOOP.
+
+        clear <travel>-TotalPrice.
+*    Perform currency conversion
+        loop at amounts_per_currencycode into data(amount_per_currencycode).
+
+            if amount_per_currencycode-currency_code = <travel>-CurrencyCode.
+                <travel>-TotalPrice += amount_per_currencycode-amount.
+            else.
+
+                /dmo/cl_flight_amdp=>convert_currency(
+                  EXPORTING
+                    iv_amount               = amount_per_currencycode-amount
+                    iv_currency_code_source = amount_per_currencycode-currency_code
+                    iv_currency_code_target = <travel>-CurrencyCode
+                    iv_exchange_rate_date   = cl_abap_context_info=>get_system_date( )
+                  IMPORTING
+                    ev_amount               = data(total_booking_amt)
+                ).
+
+                <travel>-TotalPrice = <travel>-TotalPrice + total_booking_amt.
+            ENDIF.
+
+        ENDLOOP.
+*    Put back the total amount
+
+     ENDLOOP.
+*    Return the total amount in mapped so the RAP will modify this data to DB
+     MODIFY ENTITIES OF    ZATS_ao_TRAVEL in local mode
+     entity travel
+     UPDATE FIELDS ( TotalPrice )
+     WITH CORRESPONDING #( travels ).
+
+
+  ENDMETHOD.
+
+  METHOD calculateTotalPrice.
+
+    MODIFY entities of ZATS_AO_TRAVEL in local mode
+        ENTITY travel
+            execute reCalcTotalPrice
+            FROM CORRESPONDING #( keys ).
+
+  ENDMETHOD.
+
+  METHOD validateHeaderData.
+
+
+    "Step 1: Read the travel data
+    read entities of ZATS_AO_TRAVEL in local mode
+        ENTITY travel
+        FIELDS ( CustomerId )
+        WITH CORRESPONDING #( keys )
+        RESULT data(lt_travel).
+
+    "Step 2: Declare a sorted table for holding customer ids
+    data customers type SORTED TABLE OF /dmo/customer WITH UNIQUE KEY customer_id.
+
+    "Step 3: Extract the unique customer IDs in our table
+    customers = CORRESPONDING #( lt_travel discarding duplicates mapping
+                                       customer_id = CustomerId EXCEPT *
+     ).
+    delete customers where customer_id is INITIAL.
+
+    ""Get the validation done to get all customer ids from db
+    ""these are the IDs which are present
+    if customers is not initial.
+
+        select from /dmo/customer FIELDS customer_id
+        FOR ALL ENTRIES IN @customers
+        where customer_id = @customers-customer_id
+        into table @data(lt_cust_db).
+
+    ENDIF.
+
+    ""loop at travel data
+    loop at lt_travel into data(ls_travel).
+
+        if ( ls_travel-CustomerId is initial OR
+             NOT  line_exists(  lt_cust_db[ customer_id = ls_travel-CustomerId ] ) ).
+
+            ""Inform the RAP framework to terminate the create
+            append value #( %tky = ls_travel-%tky ) to failed-travel.
+            append value #( %tky = ls_travel-%tky
+                            %element-customerid = if_abap_behv=>mk-on
+                            %msg = new /dmo/cm_flight_messages(
+                                          textid                = /dmo/cm_flight_messages=>customer_unkown
+                                          customer_id           = ls_travel-CustomerId
+                                          severity              = if_abap_behv_message=>severity-error
+
+            )
+            ) to reported-travel.
+
+        ENDIF.
+
+    ENDLOOP.
+
+    ""Exercise: Validations
+    "1. check if begin and end date is empty
+    "2. check if the end date is always > begin date
+    "3. begin date of travel should be in future
+
+
+  ENDMETHOD.
+
+ENDCLASS.
