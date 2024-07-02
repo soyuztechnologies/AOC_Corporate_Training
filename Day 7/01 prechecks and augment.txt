@@ -308,7 +308,7 @@ CLASS lhc_Travel IMPLEMENTATION.
         ENDIF.
 
         ls_result = value #( TravelId = ls_travel-TravelId
-                             %update = COND #( when lv_auth eq abap_false
+                             %action-Edit = COND #( when lv_auth eq abap_false
                                                     then if_abap_behv=>auth-unauthorized
                                                     else    if_abap_behv=>auth-allowed
                                              )
