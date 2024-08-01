@@ -1,0 +1,171 @@
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'TRAVEL ANALYTICS'
+@Metadata.ignorePropagatedAnnotations: true
+@ObjectModel.usageType:{
+    serviceQuality: #X,
+    sizeCategory: #S,
+    dataClass: #MIXED
+}
+define view entity ZATS_xx_TRAVEL_ANALYTICS as select from /dmo/travel as Travel
+  association [0..1] to /DMO/I_Agency as _Agency on $projection.AgencyID = _Agency.AgencyID
+  association [0..1] to /DMO/I_Customer as _Customer on $projection.CustomerID = _Customer.CustomerID
+{
+  key travel_id as TravelID,
+  
+  agency_id as AgencyID,
+  
+  customer_id as CustomerID,
+  
+  begin_date as BeginDate,
+  
+  end_date as EndDate,
+  
+  @Semantics.amount.currencyCode: 'CurrencyCode'
+  booking_fee as BookingFee,
+  
+  @Semantics.amount.currencyCode: 'CurrencyCode'
+  total_price as TotalPrice,
+  
+  currency_code as CurrencyCode,
+  
+  description as Description,
+  
+  status as OverallStatus,
+  
+  @Semantics.user.createdBy: true
+  createdby,
+  
+  @Semantics.systemDateTime.createdAt: true
+  createdat,
+  
+  @Semantics.user.lastChangedBy: true
+  lastchangedby,
+  
+  @Semantics.systemDateTime.lastChangedAt: true
+  lastchangedat,
+  
+  _Agency,
+  
+  _Customer
+}
+
+
+
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Booking Analytics'
+@Metadata.ignorePropagatedAnnotations: true
+@ObjectModel.usageType:{
+    serviceQuality: #X,
+    sizeCategory: #S,
+    dataClass: #MIXED
+}
+define root view entity ZATS_XX_BOOKING_ANALYTICS as select from /dmo/booking as Booking
+  association [0..1] to ZATS_xx_TRAVEL_ANALYTICS as _Travel on $projection.TravelID = _Travel.TravelID
+  association [1..1] to /DMO/I_Connection as _Connection on $projection.CarrierID = _Connection.AirlineID and $projection.ConnectionID = _Connection.ConnectionID
+  association [1..1] to /DMO/I_Carrier as _Carrier on $projection.CarrierID = _Carrier.AirlineID
+  association [0..1] to /DMO/I_Customer as _Customer on $projection.CustomerID = _Customer.CustomerID
+{
+
+  key _Travel.TravelID as TravelID,
+  
+  key booking_id as BookingID,
+  
+  booking_date as BookingDate,
+  
+  substring (booking_date,1,4) as BookingDateYear,
+  
+  customer_id as CustomerID,
+  
+  _Customer.LastName as CustomerName,
+  
+  carrier_id as CarrierID,
+  
+  _Carrier.Name as CarrierName,
+  
+  connection_id as ConnectionID,
+  
+  flight_date as FlightDate,
+  
+  @Semantics.amount.currencyCode: 'CurrencyCode'
+  flight_price as FlightPrice,
+  
+  currency_code as CurrencyCode,
+  
+  _Travel,
+  
+  _Carrier,
+  
+  _Customer,
+  
+  _Connection
+}
+
+
+
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Booking Analytics Consumption'
+@Metadata.ignorePropagatedAnnotations: true
+@ObjectModel.usageType:{
+    serviceQuality: #X,
+    sizeCategory: #S,
+    dataClass: #MIXED
+}
+define root view entity ZATS_XX_C_BOOKING_ANALYTICS 
+as projection on ZATS_XX_BOOKING_ANALYTICS
+{
+  key TravelID,
+  
+  key BookingID,
+  
+  BookingDate,
+  
+  @EndUserText.label: 'Booking Date (Year)'
+  BookingDateYear,
+  
+  @EndUserText.label: 'Customer'
+  @ObjectModel.text.element: [ 'CustomerName' ]
+  CustomerID,
+  
+  CustomerName,
+  
+  @EndUserText.label: 'Airline'
+  @ObjectModel.text.element: [ 'CarrierName' ]
+  CarrierID,
+  
+  CarrierName,
+  
+  ConnectionID,
+  
+  FlightDate,
+  
+  @Semantics.amount.currencyCode: 'CurrencyCode'
+  @Aggregation.default: #SUM
+  FlightPrice,
+  
+  CurrencyCode,
+  
+  @EndUserText.label: 'Agency'
+  @ObjectModel.text.element: [ 'AgencyName' ]
+  _Travel.AgencyID as AgencyID,
+  
+  _Travel._Agency.Name as AgencyName,
+  
+  @Semantics.user.createdBy: true
+  _Travel.createdby,
+  
+  @Semantics.user.lastChangedBy: true
+  _Travel.lastchangedby,
+  
+  _Travel,
+  
+  _Carrier,
+  
+  _Customer,
+  
+  _Connection
+}
+
+
