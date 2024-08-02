@@ -10,19 +10,18 @@
   The $metadata file of the OData service that we want to consume must be uploaded in XML file format. Hence you have to download it first.
   Click on the following URL and download the $metadata file in your computer, it will be required later in this exercise.  
   https://sapes5.sapdevcenter.com/sap/opu/odata/sap/ZAGENCYCDS_SRV/$metadata  
-  ![Custom CDS Entity](images/1.png)  
-
+  
   Step 2: Create the Service Consumption Model  
   We start by creating a service consumption model for an OData service that provides a list of travel agencies. This service resides on the public SAP Gateway System ES5 and does not require any authentication.  
 
 1. Switch to ADT and right click on your local package. Select New > Other ABAP Repository Object.  
-  ![Custom CDS Entity](images/2.png)
+  
   
 2.	In the New ABAP Repository Object dialogue do the following  
   Start to type Service in the list of objects  
   Select Service Consumption Model  
   Click Next  
-![Custom CDS Entity](images/3.png)
+
 
 3.	The New Service Consumption Model dialogue opens. Here enter the following data:  
   Name: ZSC_RAP_AGENCY_XX  
@@ -30,32 +29,32 @@
   Package: $tmp  
   Remote Consumption Model: OData (to be selected from the dropdown box)  
 Caution:  Be sure that you have selected OData as the Remote Consumption Mode from the dropdown box. There are other options such as Web Service and RFC (planned) available as well.  
-  ![Custom CDS Entity](images/4.png)
+
   
 4. The $metadata file of the OData service that we want to consume must be uploaded in file format.  
   Click Browse to select the $metadata file that you have downloaded earlier in this exercise  
   Prefix: Enter RAP_XX  
   Click Next  
 Please note if you enter a prefix, this prefix will be added to the names of the abstract entities that are generated. If you don't select a prefix and if the wizard finds out that there would be name clashes the wizard will propose unique names by adding arbitrary characters to the repository object names. In any case you will be able to change the values that will be proposed by this wizard.  
-  ![Custom CDS Entity](images/5.png)
+
 
 5. Check the ABAP Artifact Name.
   You will notice that the name of the ABAP artifact has been set to ZATS_XX_AGENCY_ES5 since we have provided the prefix RAP_XX and the name of the entity itself is Z_TRAVEL_AGENCY_ES5.  
   Press Next.  
-  ![Custom CDS Entity](images/6.png)
+
 
 6.	The wizard will now list the repository objects that will be generated, namely a service definition and an abstract entity in addition to the service consumption model.  
   Service Definition: ZSC_RAP_AGENCY_XX  
   Abstract Entity: ZATS_XX_AGENCY_ES5  
   Click Next.  
-  ![Custom CDS Entity](images/7.png)
+
   
 7.	Press Finish.  
-  ![Custom CDS Entity](images/8.png)
+
 
 8.	Let us shortly investigate the service consumption model.  
   For each operation (Read List, Read, Create, Update and Delete) some sample code has been created that you can use when you want to call the OData Service with one of these operations. Since we want to retrieve a list of Agencies, we will select the operation Read List and use this code.  
-  ![Custom CDS Entity](images/9.png)  
+
 
 <a id="#exercise-2"></a>  
 ## Exercise 2 - Defining the Custom CDS Entity  
@@ -65,7 +64,7 @@ o	We must create a custom entity.
 o	We must create a class that implements the query for the custom entity.
 Create a custom entity
 1.	Right-click on the folder Data Definition and select New Data Definition.
-![Custom CDS Entity](images/10.png)
+
 
 2.	Let’s start with creating a new data definition ZCE_RAP_AGENCY_XX using the template for a Custom Entity.
 The New Data Definition dialogue opens  
@@ -74,14 +73,14 @@ The New Data Definition dialogue opens
  Package: $tmp  
 Press Next  
 
-![Custom CDS Entity](images/11.png)
+
  
 3.	Press Next. Do NOT press Finish.
 Caution
 If you would press Finish instead of Next the wizard will use the template that was used the last time when this wizard was used by the developer.
 
 To be sure which template will be selected, we MUST press Next and not Finish which would skip the step of template selection.
-![Custom CDS Entity](images/12.png)
+
  
 4.	Select Template  
   Use the scroll bar to navigate down the list  
@@ -89,25 +88,23 @@ To be sure which template will be selected, we MUST press Next and not Finish wh
   Press Finish  
 Please note  
 There is only one template available for a custom entity i.e. Custom entity with parameters. But this doesn’t matter. We use this template and remove the statement with parameters "parameter_name : parameter_type".  
-![Custom CDS Entity](images/13.png)
+
 
 5.	Edit the source code of the custom entity ZCE_RAP_AGENCY_XX
   Remove the statement with parameters parameter_name : parameter_type  
-![Custom CDS Entity](images/14.png)
+
 
 6.	Now, open the abstract entity you created in Exercise 1 in the source code editor  
   Navigate to the abstract entity ZATS_XX_AGENCY_ES5 in the Project Explorer  
   Double click on it to open the source code editor  
-![Custom CDS Entity](images/15.png)
+
 
 7.	Copy field list from abstract entity to custom entity  
   Copy the field list from the abstract entity and paste it between the curly brackets as the new field list of the custom entity, thereby replacing the field list provided by the code template. You can make use of the Source Code Formatter (SHIFT+F1) to format the source code.  
-![Custom CDS Entity](images/16.png)  
-![Custom CDS Entity](images/17.png)  
+
  
 8.	Add the annotation @ObjectModel.Query.ImplementedBy to the DDL source code  
 @ObjectModel.query.implementedBy: 'ABAP:ZCL_CE_RAP_AGENCY_XX' and activate your changes.  
-![Custom CDS Entity](images/18.png) 
 
 Summary  
 In this unit you have created a custom entity based on the abstract entity that has been generated when activating the service consumption model.
@@ -122,10 +119,8 @@ Please note that the placeholder XX used in object names in the exercise descrip
 Follow the instructions below.  
 Creating the implementation  
 1.	Right-click on your package and go to New-> Other ABAP Repository Objects.  
-![Custom CDS Entity](images/19.png) 
 
 2.	Search for ABAP class and press Next  
-![Custom CDS Entity](images/20.png)  
  
 3.	Create a new ABAP class ZCL_CE_RAP_AGENCY_XX for custom entity ZCE_RAP_AGENCY_XX.  
 The New Data Definition dialogue opens  
@@ -133,7 +128,6 @@ The New Data Definition dialogue opens
   Description: Query implementation custom entity  
   Package: $tmp  
   Press Next  
-![Custom CDS Entity](images/21.png)
 
 ```
 @EndUserText.label: 'Get all agencies from ES5'
@@ -163,11 +157,9 @@ define custom entity ZATS_XX_AGENCY_ES5
 
 4.	Add interface IF_RAP_QUERY_PROVIDER to the query implementation class ZCL_CE_RAP_AGENCY_XX  
   Add the following statement in the public section  
-  INTERFACES if_rap_query_provider.     
-![Custom CDS Entity](images/22.png) 
+  INTERFACES if_rap_query_provider.   
 
 5.	Add an implementation for the method if_rap_query_provider~select.  
-![Custom CDS Entity](images/23.png)
 
 6.	Implement the method if_rap_query_provider~select. Within the select() method, we can retrieve the details of the incoming OData call using the object io_request.
 Using the method get_paging() we can find out whether client side paging was requested with the incoming OData call. Using the method get_filter() we can retrieve the filter that was used by the incoming OData request and by calling the method ->get_as_ranges( ) provided by the filter object we can retrieve the filter as ranges.
