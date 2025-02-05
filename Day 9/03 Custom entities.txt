@@ -1,8 +1,8 @@
-1. Define custom entity : ZATS_XX_AGENCY_ES5
+1. Define custom entity : ZLAM_AB_AGENCY_ES5
 
 @EndUserText.label: 'Get all agencies from ES5'
 @ObjectModel.query.implementedBy: 'ABAP:ZCL_ATS_XX_AGENCY'
-define custom entity ZATS_XX_AGENCY_ES5
+define custom entity ZLAM_AB_AGENCY_ES5
 {
   key Agency_Id : abap.char( 6 );
   Name : abap.char( 31 );
@@ -104,6 +104,6 @@ define custom entity ZATS_XX_AGENCY_ES5
 
 
 @Consumption.valueHelpDefinition: [{ 
-        entity.name: 'ZATS_XX_AGENCY_ES5',
+        entity.name: 'ZLAM_AB_AGENCY_ES5',
         entity.element: 'Agency_Id'
      }]
